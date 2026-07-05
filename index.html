@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>複式簿記 家計簿</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f1efe8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: #f1efe8;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 12px;
+  }
+  .container { max-width: 760px; margin: 0 auto; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #d3d1c7;
+    background: transparent;
+    color: #1a1a1a;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .tab-btn.active { background: #fff; border-color: #888780; font-weight: 600; }
+  .card {
+    background: #fff;
+    border: 1px solid #d3d1c7;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  label { font-size: 13px; color: #5f5e5a; display: block; margin-bottom: 4px; }
+  input, select {
+    width: 100%;
+    height: 38px;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 14px;
+    background: #fff;
+    color: #1a1a1a;
+  }
+  .row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .field { flex: 1 1 140px; min-width: 130px; }
+  button.primary {
+    background: #1a1a1a;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.link {
+    border: none;
+    background: transparent;
+    color: #a32d2d;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px;
+  }
+  table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  th { text-align: left; padding: 6px 4px; border-bottom: 1px solid #888780; }
+  td { padding: 6px 4px; border-bottom: 1px solid #d3d1c7; }
+  .num { text-align: right; }
+  .error {
+    background: #fcebeb;
+    color: #791f1f;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  h3 { margin-top: 0; font-size: 16px; }
+  .muted { color: #888780; font-size: 14px; }
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
+  .kv.total { font-weight: 600; border-top: 1px solid #888780; margin-top: 4px; padding-top: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) {
+    .grid2 { grid-template-columns: 1fr; }
+  }
+  .login-screen {
+    max-width: 400px;
+    margin: 80px auto;
+    text-align: center;
+  }
+  .login-screen h2 { font-size: 18px; margin-bottom: 8px; }
+  .login-screen p { color: #5f5e5a; font-size: 14px; margin-bottom: 24px; }
+  button.google {
+    background: #fff;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: #5f5e5a;
+  }
+  .topbar button {
+    border: none;
+    background: transparent;
+    color: #a32d2d;
+    cursor: pointer;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="container" id="app">
+  <div class="login-screen">
+    <h2>複式簿記 家計簿</h2>
+    <p>読み込み中...</p>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const DEFAULT_ACCOUNTS = [
+  { name: '現金', type: 'asset' },
+  { name: '普通預金', type: 'asset' },
+  { name: '食費', type: 'expense' },
+  { name: '住居費', type: 'expense' },
+  { name: '水道光熱費', type: 'expense' },
+  { name: '通信費', type: 'expense' },
+  { name: '交際費', type: 'expense' },
+  { name: '被服費', type: 'expense' },
+  { name: '教材費', type: 'expense' },
+  { name: '娯楽費', type: 'expense' },
+  { name: '交通費', type: 'expense' },
+  { name: '雑費', type: 'expense' },
+  { name: '仕送り', type: 'revenue' },
+  { name: 'アルバイト収入', type: 'revenue' },
+  { name: '奨学金', type: 'liability' },
+];
+
+const TYPE_LABEL = { asset: '資産', liability: '負債', equity: '純資産', revenue: '収益', expense: '費用' };
+const TYPE_ORDER = ['asset', 'liability', 'equity', 'revenue', 'expense'];
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function normalDebit(type) { return type === 'asset' || type === 'expense'; }
+function fmt(n) { return Math.round(n).toLocaleString('ja-JP'); }
+
+let state = {
+  user: null,
+  accounts: [],
+  entries: [],
+  tab: 'entry',
+  error: '',
+  form: {
+    date: new Date().toISOString().slice(0, 10),
+    memo: '',
+    debit: '',
+    credit: '',
+    amount: '',
+  },
+  accForm: { name: '', type: 'expense' },
+};
+
+function userDocRef() {
+  return db.collection('users').doc(state.user.uid);
+}
+
+async function loadUserData() {
+  const doc = await userDocRef().get();
+  if (doc.exists) {
+    const data = doc.data();
+    state.accounts = data.accounts || DEFAULT_ACCOUNTS.map(a => ({ ...a, id: uid() }));
+    state.entries = data.entries || [];
+  } else {
+    state.accounts = DEFAULT_ACCOUNTS.map(a => ({ ...a, id: uid() }));
+    state.entries = [];
+    await saveUserData();
+  }
+}
+
+let saveTimer = null;
+function saveUserData() {
+  return userDocRef().set({
+    accounts: state.accounts,
+    entries: state.entries,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+function renderLogin() {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login-screen">
+      <h2>複式簿記 家計簿</h2>
+      <p>Googleアカウントでログインすると、どの端末からでも同じデータにアクセスできます。</p>
+      <button class="google" id="google-login">Googleでログイン</button>
+    </div>
+  `;
+  document.getElementById('google-login').onclick = () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(err => {
+      alert('ログインに失敗しました: ' + err.message);
+    });
+  };
+}
+
+function renderLoading(msg) {
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="login-screen"><h2>複式簿記 家計簿</h2><p>${msg}</p></div>`;
+}
+
+function render() {
+  if (!state.user) { renderLogin(); return; }
+
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  const topbar = document.createElement('div');
+  topbar.className = 'topbar';
+  topbar.innerHTML = `<span>${state.user.email}</span><button id="logout-btn">ログアウト</button>`;
+  app.appendChild(topbar);
+  document.getElementById('logout-btn').onclick = () => auth.signOut();
+
+  const tabs = document.createElement('div');
+  tabs.className = 'tabs';
+  [
+    ['entry', '仕訳入力'],
+    ['journal', '仕訳帳'],
+    ['ledger', '総勘定元帳'],
+    ['statements', '財務諸表'],
+    ['accounts', '科目管理'],
+  ].forEach(([key, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (state.tab === key ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => { state.tab = key; state.error = ''; render(); };
+    tabs.appendChild(btn);
+  });
+  app.appendChild(tabs);
+
+  if (state.error) {
+    const err = document.createElement('div');
+    err.className = 'error';
+    err.textContent = state.error;
+    app.appendChild(err);
+  }
+
+  if (state.tab === 'entry') renderEntry(app);
+  else if (state.tab === 'journal') renderJournal(app);
+  else if (state.tab === 'ledger') renderLedger(app);
+  else if (state.tab === 'statements') renderStatements(app);
+  else if (state.tab === 'accounts') renderAccounts(app);
+}
+
+function accountOptions(selected) {
+  return state.accounts.map(a =>
+    `<option value="${a.name}" ${a.name === selected ? 'selected' : ''}>${a.name}</option>`
+  ).join('');
+}
+
+function renderEntry(app) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="row">
+      <div class="field">
+        <label>日付</label>
+        <input type="date" id="f-date" value="${state.form.date}">
+      </div>
+      <div class="field" style="flex:2 1 240px;">
+        <label>摘要</label>
+        <input type="text" id="f-memo" value="${state.form.memo}" placeholder="スーパーで食材購入">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>借方科目</label>
+        <select id="f-debit"><option value="">選択してください</option>${accountOptions(state.form.debit)}</select>
+      </div>
+      <div class="field">
+        <label>貸方科目</label>
+        <select id="f-credit"><option value="">選択してください</option>${accountOptions(state.form.credit)}</select>
+      </div>
+      <div class="field">
+        <label>金額（円）</label>
+        <input type="number" id="f-amount" value="${state.form.amount}" placeholder="3000">
+      </div>
+    </div>
+    <button class="primary" id="f-submit">仕訳を記帳</button>
+  `;
+  app.appendChild(card);
+
+  document.getElementById('f-submit').onclick = async () => {
+    const date = document.getElementById('f-date').value;
+    const memo = document.getElementById('f-memo').value.trim();
+    const debit = document.getElementById('f-debit').value;
+    const credit = document.getElementById('f-credit').value;
+    const amount = parseFloat(document.getElementById('f-amount').value);
+
+    state.error = '';
+    if (!debit || !credit) { state.error = '借方と貸方の科目を選択してください。'; render(); return; }
+    if (debit === credit) { state.error = '借方と貸方に同じ科目は使えません。'; render(); return; }
+    if (!amount || amount <= 0) { state.error = '金額は正の数で入力してください。'; render(); return; }
+
+    state.entries.push({ id: uid(), date, memo, debit, credit, amount });
+    state.entries.sort((a, b) => a.date.localeCompare(b.date));
+    await saveUserData();
+
+    state.form = { date, memo: '', debit: '', credit: '', amount: '' };
+    render();
+  };
+}
+
+function renderJournal(app) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  if (state.entries.length === 0) {
+    card.innerHTML = '<p class="muted">まだ仕訳がありません。仕訳入力タブから記帳してください。</p>';
+    app.appendChild(card);
+    return;
+  }
+  let rows = state.entries.map(e => `
+    <tr>
+      <td>${e.date}</td>
+      <td>${e.debit}</td>
+      <td>${e.credit}</td>
+      <td class="num">${fmt(e.amount)}</td>
+      <td style="color:#5f5e5a;">${e.memo}</td>
+      <td><button class="link" data-id="${e.id}">削除</button></td>
+    </tr>
+  `).join('');
+  card.innerHTML = `
+    <table>
+      <thead><tr><th>日付</th><th>借方</th><th>貸方</th><th class="num">金額</th><th>摘要</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  app.appendChild(card);
+  card.querySelectorAll('button.link').forEach(btn => {
+    btn.onclick = async () => {
+      state.entries = state.entries.filter(e => e.id !== btn.dataset.id);
+      await saveUserData();
+      render();
+    };
+  });
+}
+
+function computeBalances() {
+  const map = {};
+  state.accounts.forEach(a => { map[a.name] = { type: a.type, debit: 0, credit: 0 }; });
+  state.entries.forEach(e => {
+    if (map[e.debit]) map[e.debit].debit += e.amount;
+    if (map[e.credit]) map[e.credit].credit += e.amount;
+  });
+  const result = {};
+  Object.entries(map).forEach(([name, v]) => {
+    const net = normalDebit(v.type) ? v.debit - v.credit : v.credit - v.debit;
+    result[name] = { type: v.type, debit: v.debit, credit: v.credit, balance: net };
+  });
+  return result;
+}
+
+function renderLedger(app) {
+  const balances = computeBalances();
+  TYPE_ORDER.forEach(type => {
+    const list = Object.entries(balances).filter(([, b]) => b.type === type);
+    if (list.length === 0) return;
+    const card = document.createElement('div');
+    card.className = 'card';
+    let rows = list.map(([name, b]) => `
+      <tr>
+        <td>${name}</td>
+        <td class="num">${fmt(b.debit)}</td>
+        <td class="num">${fmt(b.credit)}</td>
+        <td class="num" style="font-weight:600;">${fmt(b.balance)}</td>
+      </tr>
+    `).join('');
+    card.innerHTML = `
+      <h3>${TYPE_LABEL[type]}</h3>
+      <table>
+        <thead><tr><th>科目</th><th class="num">借方合計</th><th class="num">貸方合計</th><th class="num">残高</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+    app.appendChild(card);
+  });
+}
+
+function renderStatements(app) {
+  const balances = computeBalances();
+  let assets = 0, liabilities = 0, revenue = 0, expense = 0;
+  Object.values(balances).forEach(b => {
+    if (b.type === 'asset') assets += b.balance;
+    else if (b.type === 'liability') liabilities += b.balance;
+    else if (b.type === 'revenue') revenue += b.balance;
+    else if (b.type === 'expense') expense += b.balance;
+  });
+  const netIncome = revenue - expense;
+
+  const bsCard = document.createElement('div');
+  bsCard.className = 'card';
+  const assetRows = Object.entries(balances).filter(([, b]) => b.type === 'asset')
+    .map(([n, b]) => `<div class="kv"><span>${n}</span><span>${fmt(b.balance)}</span></div>`).join('');
+  const liabRows = Object.entries(balances).filter(([, b]) => b.type === 'liability')
+    .map(([n, b]) => `<div class="kv"><span>${n}</span><span>${fmt(b.balance)}</span></div>`).join('');
+  bsCard.innerHTML = `
+    <h3>貸借対照表</h3>
+    <div class="grid2">
+      <div>
+        <p class="muted" style="font-size:13px; margin:0 0 8px;">資産</p>
+        ${assetRows}
+        <div class="kv total"><span>資産合計</span><span>${fmt(assets)}</span></div>
+      </div>
+      <div>
+        <p class="muted" style="font-size:13px; margin:0 0 8px;">負債・純資産</p>
+        ${liabRows}
+        <div class="kv"><span>当期純利益（繰入）</span><span>${fmt(netIncome)}</span></div>
+        <div class="kv total"><span>負債・純資産合計</span><span>${fmt(liabilities + netIncome)}</span></div>
+      </div>
+    </div>
+    ${Math.round(assets) !== Math.round(liabilities + netIncome)
+      ? `<p style="font-size:12px; color:#791f1f; margin-top:12px;">貸借が一致していません（資産 ${fmt(assets)} ≠ 負債+純資産 ${fmt(liabilities + netIncome)}）。仕訳内容を確認してください。</p>`
+      : ''}
+  `;
+  app.appendChild(bsCard);
+
+  const plCard = document.createElement('div');
+  plCard.className = 'card';
+  plCard.innerHTML = `
+    <h3>損益計算書</h3>
+    <div class="kv"><span>収益合計</span><span>${fmt(revenue)}</span></div>
+    <div class="kv"><span>費用合計</span><span>${fmt(expense)}</span></div>
+    <div class="kv total" style="font-size:14px;"><span>当期純利益</span><span>${fmt(netIncome)}</span></div>
+  `;
+  app.appendChild(plCard);
+}
+
+function renderAccounts(app) {
+  const formCard = document.createElement('div');
+  formCard.className = 'card';
+  formCard.innerHTML = `
+    <div class="row">
+      <div class="field">
+        <label>科目名</label>
+        <input type="text" id="a-name" value="${state.accForm.name}" placeholder="書籍代">
+      </div>
+      <div class="field">
+        <label>区分</label>
+        <select id="a-type">${TYPE_ORDER.map(t => `<option value="${t}" ${t === state.accForm.type ? 'selected' : ''}>${TYPE_LABEL[t]}</option>`).join('')}</select>
+      </div>
+    </div>
+    <button class="primary" id="a-submit">科目を追加</button>
+  `;
+  app.appendChild(formCard);
+
+  document.getElementById('a-submit').onclick = async () => {
+    const name = document.getElementById('a-name').value.trim();
+    const type = document.getElementById('a-type').value;
+    state.error = '';
+    if (!name) { state.error = '科目名を入力してください。'; render(); return; }
+    if (state.accounts.some(a => a.name === name)) { state.error = '同じ名前の科目が既に存在します。'; render(); return; }
+    state.accounts.push({ id: uid(), name, type });
+    await saveUserData();
+    state.accForm = { name: '', type: 'expense' };
+    render();
+  };
+
+  const listCard = document.createElement('div');
+  listCard.className = 'card';
+  let rows = state.accounts.map(a => `
+    <tr>
+      <td>${a.name}</td>
+      <td style="color:#5f5e5a;">${TYPE_LABEL[a.type]}</td>
+      <td><button class="link" data-id="${a.id}">削除</button></td>
+    </tr>
+  `).join('');
+  listCard.innerHTML = `
+    <table>
+      <thead><tr><th>科目名</th><th>区分</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  app.appendChild(listCard);
+
+  listCard.querySelectorAll('button.link').forEach(btn => {
+    btn.onclick = async () => {
+      const acc = state.accounts.find(a => a.id === btn.dataset.id);
+      if (!acc) return;
+      const inUse = state.entries.some(e => e.debit === acc.name || e.credit === acc.name);
+      state.error = '';
+      if (inUse) { state.error = `科目「${acc.name}」は仕訳で使用されているため削除できません。`; render(); return; }
+      state.accounts = state.accounts.filter(a => a.id !== acc.id);
+      await saveUserData();
+      render();
+    };
+  });
+}
+
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    state.user = user;
+    renderLoading('データを読み込んでいます...');
+    await loadUserData();
+    render();
+  } else {
+    state.user = null;
+    render();
+  }
+});
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function() {});
+}
+</script>
+</body>
+</html>
