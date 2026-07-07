@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>複式簿記 家計簿</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f1efe8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: #f1efe8;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 12px;
+  }
+  .container { max-width: 780px; margin: 0 auto; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #d3d1c7;
+    background: transparent;
+    color: #1a1a1a;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .tab-btn.active { background: #fff; border-color: #888780; font-weight: 600; }
+  .card {
+    background: #fff;
+    border: 1px solid #d3d1c7;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  label { font-size: 13px; color: #5f5e5a; display: block; margin-bottom: 4px; }
+  input, select {
+    width: 100%;
+    height: 38px;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 14px;
+    background: #fff;
+    color: #1a1a1a;
+  }
+  .row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .field { flex: 1 1 140px; min-width: 130px; }
+  button.primary {
+    background: #1a1a1a;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #1a1a1a;
+  }
+  button.link {
+    border: none;
+    background: transparent;
+    color: #a32d2d;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px;
+  }
+  table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  th { text-align: left; padding: 6px 4px; border-bottom: 1px solid #888780; }
+  td { padding: 6px 4px; border-bottom: 1px solid #d3d1c7; }
+  .num { text-align: right; }
+  .error {
+    background: #fcebeb;
+    color: #791f1f;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  h3 { margin-top: 0; font-size: 16px; }
+  .muted { color: #888780; font-size: 14px; }
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
+  .kv.total { font-weight: 600; border-top: 1px solid #888780; margin-top: 4px; padding-top: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) {
+    .grid2 { grid-template-columns: 1fr; }
+  }
+  .login-screen { max-width: 400px; margin: 80px auto; text-align: center; }
+  .login-screen h2 { font-size: 18px; margin-bottom: 8px; }
+  .login-screen p { color: #5f5e5a; font-size: 14px; margin-bottom: 24px; }
+  button.google {
+    background: #fff;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #5f5e5a;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .book-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .book-bar select { flex: 1 1 200px; }
+  .period-bar { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; }
+  .period-bar .field { flex: 1 1 140px; }
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+  }
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 360px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal h3 { margin-top: 0; }
+  .modal .row { margin-bottom: 16px; }
+
+  .cal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .cal-header h3 { margin: 0; }
+  .cal-header button {
+    border: 1px solid #d3d1c7;
+    background: #fff;
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 15px;
+  }
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
+  .cal-dow {
+    text-align: center;
+    font-size: 12px;
+    color: #888780;
+    padding: 4px 0;
+  }
+  .cal-cell {
+    border: 1px solid #e5e3da;
+    border-radius: 6px;
+    min-height: 56px;
+    padding: 4px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .cal-cell.empty { border: none; cursor: default; }
+  .cal-cell.today { border-color: #1a1a1a; border-width: 2px; }
+  .cal-cell:hover:not(.empty) { background: #f7f6f2; }
+  .cal-date { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .cal-delta-plus { color: #1b7a3d; }
+  .cal-delta-minus { color: #a32d2d; }
+  .period-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+  .period-toggle button.active { background: #fff; border-color: #888780; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container" id="app">
+  <div class="login-screen">
+    <h2>複式簿記 家計簿</h2>
+    <p>読み込み中...</p>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const DEFAULT_ACCOUNTS = [
+  { name: '現金', type: 'asset' },
+  { name: '普通預金', type: 'asset' },
+  { name: '食費', type: 'expense' },
+  { name: '住居費', type: 'expense' },
+  { name: '水道光熱費', type: 'expense' },
+  { name: '通信費', type: 'expense' },
+  { name: '交際費', type: 'expense' },
+  { name: '被服費', type: 'expense' },
+  { name: '教材費', type: 'expense' },
+  { name: '娯楽費', type: 'expense' },
+  { name: '交通費', type: 'expense' },
+  { name: '雑費', type: 'expense' },
+  { name: '仕送り', type: 'revenue' },
+  { name: 'アルバイト収入', type: 'revenue' },
+  { name: '奨学金', type: 'liability' },
+];
+
+const TYPE_LABEL = { asset: '資産', liability: '負債', equity: '純資産', revenue: '収益', expense: '費用' };
+const TYPE_ORDER = ['asset', 'liability', 'equity', 'revenue', 'expense'];
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function normalDebit(type) { return type === 'asset' || type === 'expense'; }
+function fmt(n) { return Math.round(n).toLocaleString('ja-JP'); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function firstOfMonthStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
+}
+
+// 年度基準（4月始まり）のユーティリティ
+function fiscalYearOf(dateStr) {
+  const [y, m] = dateStr.split('-').map(Number);
+  return m >= 4 ? y : y - 1;
+}
+function fiscalQuarterOf(dateStr) {
+  const [, m] = dateStr.split('-').map(Number);
+  // 4-6:Q1, 7-9:Q2, 10-12:Q3, 1-3:Q4
+  if (m >= 4 && m <= 6) return 1;
+  if (m >= 7 && m <= 9) return 2;
+  if (m >= 10 && m <= 12) return 3;
+  return 4;
+}
+function fiscalQuarterRange(fy, q) {
+  // fyは年度開始年（例: 2026年度 = 2026-04-01始まり）
+  const starts = { 1: [fy, 4], 2: [fy, 7], 3: [fy, 10], 4: [fy + 1, 1] };
+  const [sy, sm] = starts[q];
+  const ey = sm === 10 ? sy : (sm === 1 ? sy : sy);
+  const em = sm + 2;
+  const startStr = sy + '-' + String(sm).padStart(2, '0') + '-01';
+  const endYear = sm + 2 > 12 ? sy + 1 : sy;
+  const endMonth = ((sm + 2 - 1) % 12) + 1;
+  const lastDay = new Date(endYear, endMonth, 0).getDate();
+  const endStr = endYear + '-' + String(endMonth).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
+  return [startStr, endStr];
+}
+function fiscalYearRange(fy) {
+  return [fy + '-04-01', (fy + 1) + '-03-31'];
+}
+function calendarYearRange(y) {
+  return [y + '-01-01', y + '-12-31'];
+}
+function calendarQuarterOf(dateStr) {
+  const [, m] = dateStr.split('-').map(Number);
+  return Math.ceil(m / 3);
+}
+function calendarQuarterRange(y, q) {
+  const startMonth = (q - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(y, endMonth, 0).getDate();
+  return [
+    y + '-' + String(startMonth).padStart(2, '0') + '-01',
+    y + '-' + String(endMonth).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0'),
+  ];
+}
+
+let state = {
+  user: null,
+  books: [],
+  currentBookId: null,
+  tab: 'entry',
+  error: '',
+  periodStart: firstOfMonthStr(),
+  periodEnd: todayStr(),
+  form: { date: todayStr(), memo: '', debit: '', credit: '', amount: '' },
+  accForm: { name: '', type: 'expense' },
+  modal: null,
+  calendarYear: new Date().getFullYear(),
+  calendarMonth: new Date().getMonth(), // 0-indexed
+  selectedDate: null,
+  periodSummaryMode: 'month', // 'month' | 'quarter' | 'year'
+  periodSummaryMonth: firstOfMonthStr().slice(0, 7), // 'YYYY-MM'
+  periodSummaryFY: fiscalYearOf(todayStr()),
+  periodSummaryQ: fiscalQuarterOf(todayStr()),
+  periodBasis: 'fiscal', // 'fiscal' | 'calendar'
+  pdfExportYear: new Date().getFullYear(),
+  pdfExporting: false,
+  editingAccountId: null,
+  viewingMemo: null,
+};
+
+function currentBook() {
+  return state.books.find(b => b.id === state.currentBookId);
+}
+
+function userDocRef() {
+  return db.collection('users').doc(state.user.uid);
+}
+
+function newDefaultBook(name) {
+  return {
+    id: uid(),
+    name: name || '家計簿',
+    accounts: DEFAULT_ACCOUNTS.map(a => ({ ...a, id: uid() })),
+    entries: [],
+    trash: [],
+  };
+}
+
+async function loadUserData() {
+  const doc = await userDocRef().get();
+  if (doc.exists) {
+    const data = doc.data();
+    if (data.books && data.books.length > 0) {
+      state.books = data.books;
+    } else if (data.accounts || data.entries) {
+      const migrated = {
+        id: uid(),
+        name: 'デフォルト帳簿',
+        accounts: data.accounts || DEFAULT_ACCOUNTS.map(a => ({ ...a, id: uid() })),
+        entries: data.entries || [],
+      };
+      state.books = [migrated];
+      await saveUserData();
+    } else {
+      state.books = [newDefaultBook()];
+      await saveUserData();
+    }
+  } else {
+    state.books = [newDefaultBook()];
+    await saveUserData();
+  }
+  state.currentBookId = state.books[0].id;
+  purgeOldTrash();
+}
+
+// 各帳簿のゴミ箱をチェックし、削除から30日超過したものを完全削除する
+function purgeOldTrash() {
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  let changed = false;
+  state.books.forEach(book => {
+    if (!book.trash || book.trash.length === 0) return;
+    const before = book.trash.length;
+    book.trash = book.trash.filter(e => {
+      if (!e.deletedAt) return true;
+      return (now - new Date(e.deletedAt).getTime()) < THIRTY_DAYS_MS;
+    });
+    if (book.trash.length !== before) changed = true;
+  });
+  if (changed) saveUserData();
+}
+
+function saveUserData() {
+  return userDocRef().set({
+    books: state.books,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+function renderLogin() {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login-screen">
+      <h2>複式簿記 家計簿</h2>
+      <p>Googleアカウントでログインすると、どの端末からでも同じデータにアクセスできます。</p>
+      <button class="google" id="google-login">Googleでログイン</button>
+    </div>
+  `;
+  document.getElementById('google-login').onclick = () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(err => {
+      alert('ログインに失敗しました: ' + err.message);
+    });
+  };
+}
+
+function renderLoading(msg) {
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="login-screen"><h2>複式簿記 家計簿</h2><p>${msg}</p></div>`;
+}
+
+function render() {
+  if (!state.user) { renderLogin(); return; }
+
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  const topbar = document.createElement('div');
+  topbar.className = 'topbar';
+  topbar.innerHTML = `<span>${state.user.email}</span><button class="link" id="logout-btn">ログアウト</button>`;
+  app.appendChild(topbar);
+  document.getElementById('logout-btn').onclick = () => auth.signOut();
+
+  const bookBar = document.createElement('div');
+  bookBar.className = 'book-bar';
+  bookBar.innerHTML = `
+    <select id="book-select">
+      ${state.books.map(b => `<option value="${b.id}" ${b.id === state.currentBookId ? 'selected' : ''}>${b.name}</option>`).join('')}
+    </select>
+    <button class="secondary" id="book-new">新規帳簿</button>
+    <button class="secondary" id="book-rename">名前変更</button>
+    <button class="secondary" id="book-delete">削除</button>
+  `;
+  app.appendChild(bookBar);
+
+  document.getElementById('book-select').onchange = (e) => {
+    state.currentBookId = e.target.value;
+    state.error = '';
+    render();
+  };
+  document.getElementById('book-new').onclick = () => { state.modal = 'new-book'; render(); };
+  document.getElementById('book-rename').onclick = () => { state.modal = 'rename-book'; render(); };
+  document.getElementById('book-delete').onclick = () => { state.modal = 'delete-book'; render(); };
+
+  const tabs = document.createElement('div');
+  tabs.className = 'tabs';
+  [
+    ['entry', '仕訳入力'],
+    ['journal', '仕訳帳'],
+    ['ledger', '総勘定元帳'],
+    ['statements', '財務諸表'],
+    ['calendar', 'カレンダー'],
+    ['periodsummary', '期間集計'],
+    ['accounts', '科目管理'],
+    ['trash', 'ゴミ箱'],
+  ].forEach(([key, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (state.tab === key ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => { state.tab = key; state.error = ''; render(); };
+    tabs.appendChild(btn);
+  });
+  app.appendChild(tabs);
+
+  if (state.error) {
+    const err = document.createElement('div');
+    err.className = 'error';
+    err.textContent = state.error;
+    app.appendChild(err);
+  }
+
+  if (state.tab === 'entry') renderEntry(app);
+  else if (state.tab === 'journal') renderJournal(app);
+  else if (state.tab === 'ledger') renderLedger(app);
+  else if (state.tab === 'statements') renderStatements(app);
+  else if (state.tab === 'calendar') renderCalendar(app);
+  else if (state.tab === 'periodsummary') renderPeriodSummary(app);
+  else if (state.tab === 'accounts') renderAccounts(app);
+  else if (state.tab === 'trash') renderTrash(app);
+
+  if (state.modal) renderModal(app);
+}
+
+function renderModal(app) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+
+  if (state.modal === 'new-book') {
+    modal.innerHTML = `
+      <h3>新規帳簿を作成</h3>
+      <div class="row"><div class="field">
+        <label>帳簿名</label>
+        <input type="text" id="modal-book-name" placeholder="サークル会計">
+      </div></div>
+      <div class="row">
+        <button class="primary" id="modal-create">作成</button>
+        <button class="secondary" id="modal-cancel">キャンセル</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-create').onclick = async () => {
+      const name = document.getElementById('modal-book-name').value.trim();
+      if (!name) return;
+      const book = newDefaultBook(name);
+      state.books.push(book);
+      state.currentBookId = book.id;
+      await saveUserData();
+      state.modal = null;
+      render();
+    };
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; render(); };
+  } else if (state.modal === 'rename-book') {
+    const book = currentBook();
+    modal.innerHTML = `
+      <h3>帳簿名を変更</h3>
+      <div class="row"><div class="field">
+        <label>帳簿名</label>
+        <input type="text" id="modal-book-rename" value="${book.name}">
+      </div></div>
+      <div class="row">
+        <button class="primary" id="modal-save">保存</button>
+        <button class="secondary" id="modal-cancel">キャンセル</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-save').onclick = async () => {
+      const name = document.getElementById('modal-book-rename').value.trim();
+      if (!name) return;
+      book.name = name;
+      await saveUserData();
+      state.modal = null;
+      render();
+    };
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; render(); };
+  } else if (state.modal === 'delete-book') {
+    const book = currentBook();
+    if (state.books.length <= 1) {
+      modal.innerHTML = `
+        <h3>削除できません</h3>
+        <p class="muted">最後の1冊は削除できません。</p>
+        <div class="row"><button class="secondary" id="modal-cancel">閉じる</button></div>
+      `;
+    } else {
+      modal.innerHTML = `
+        <h3>帳簿を削除</h3>
+        <p class="muted">「${book.name}」を削除します。仕訳と科目もすべて失われ、元に戻せません。</p>
+        <div class="row">
+          <button class="primary" id="modal-confirm-delete" style="background:#a32d2d;">削除する</button>
+          <button class="secondary" id="modal-cancel">キャンセル</button>
+        </div>
+      `;
+    }
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    const cancelBtn = document.getElementById('modal-cancel');
+    if (cancelBtn) cancelBtn.onclick = () => { state.modal = null; render(); };
+    const confirmBtn = document.getElementById('modal-confirm-delete');
+    if (confirmBtn) confirmBtn.onclick = async () => {
+      state.books = state.books.filter(b => b.id !== book.id);
+      state.currentBookId = state.books[0].id;
+      await saveUserData();
+      state.modal = null;
+      render();
+    };
+  } else if (state.modal === 'day-summary') {
+    const book = currentBook();
+    const date = state.selectedDate;
+    const dayEntries = book.entries.filter(e => e.date === date);
+    const summary = accountTypeDeltaSummary(dayEntries, book);
+
+    modal.innerHTML = `
+      <h3>${date} の科目区分別増減</h3>
+      ${dayEntries.length === 0 ? '<p class="muted">この日の仕訳はありません。</p>' : ''}
+      ${TYPE_ORDER.map(type => `
+        <div class="kv">
+          <span>${TYPE_LABEL[type]}</span>
+          <span>
+            <span class="cal-delta-plus">+${fmt(summary[type].increase)}</span>
+            &nbsp;/&nbsp;
+            <span class="cal-delta-minus">-${fmt(summary[type].decrease)}</span>
+          </span>
+        </div>
+      `).join('')}
+      <div class="row" style="margin-top:16px;">
+        <button class="secondary" id="modal-cancel">閉じる</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.selectedDate = null; render(); };
+  } else if (state.modal === 'edit-account') {
+    const book = currentBook();
+    const acc = book.accounts.find(a => a.id === state.editingAccountId);
+    if (!acc) { state.modal = null; return; }
+    modal.innerHTML = `
+      <h3>科目を編集</h3>
+      <p class="muted" style="font-size:12px;">名称を変更すると、この科目を使っている過去の仕訳もすべて新しい名称に更新される。</p>
+      <div class="row"><div class="field">
+        <label>科目名</label>
+        <input type="text" id="edit-acc-name" value="${acc.name}">
+      </div></div>
+      <div class="row"><div class="field">
+        <label>区分</label>
+        <select id="edit-acc-type">${TYPE_ORDER.map(t => `<option value="${t}" ${t === acc.type ? 'selected' : ''}>${TYPE_LABEL[t]}</option>`).join('')}</select>
+      </div></div>
+      <div class="row">
+        <button class="primary" id="modal-save">保存</button>
+        <button class="secondary" id="modal-cancel">キャンセル</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-save').onclick = async () => {
+      const newName = document.getElementById('edit-acc-name').value.trim();
+      const newType = document.getElementById('edit-acc-type').value;
+      state.error = '';
+      if (!newName) { state.error = '科目名を入力してください。'; render(); return; }
+      if (newName !== acc.name && book.accounts.some(a => a.name === newName)) {
+        state.error = '同じ名前の科目が既に存在します。'; render(); return;
+      }
+      const oldName = acc.name;
+      if (oldName !== newName) {
+        book.entries.forEach(e => {
+          if (e.debit === oldName) e.debit = newName;
+          if (e.credit === oldName) e.credit = newName;
+        });
+        (book.trash || []).forEach(e => {
+          if (e.debit === oldName) e.debit = newName;
+          if (e.credit === oldName) e.credit = newName;
+        });
+      }
+      acc.name = newName;
+      acc.type = newType;
+      await saveUserData();
+      state.modal = null;
+      state.editingAccountId = null;
+      render();
+    };
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.editingAccountId = null; render(); };
+  } else if (state.modal === 'view-memo') {
+    modal.innerHTML = `
+      <h3>摘要</h3>
+      <p style="font-size:14px; white-space: pre-wrap;">${state.viewingMemo || '(摘要なし)'}</p>
+      <div class="row" style="margin-top:16px;">
+        <button class="secondary" id="modal-cancel">閉じる</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.viewingMemo = null; render(); };
+  }
+}
+
+function accountOptions(selected) {
+  const book = currentBook();
+  return book.accounts.map(a =>
+    `<option value="${a.name}" ${a.name === selected ? 'selected' : ''}>${a.name}</option>`
+  ).join('');
+}
+
+function renderPeriodBar(app) {
+  const bar = document.createElement('div');
+  bar.className = 'period-bar';
+  bar.innerHTML = `
+    <div class="field">
+      <label>期間（開始）</label>
+      <input type="date" id="period-start" value="${state.periodStart}">
+    </div>
+    <div class="field">
+      <label>期間（終了）</label>
+      <input type="date" id="period-end" value="${state.periodEnd}">
+    </div>
+    <button class="secondary" id="period-clear">全期間表示</button>
+  `;
+  app.appendChild(bar);
+  document.getElementById('period-start').onchange = (e) => { state.periodStart = e.target.value; render(); };
+  document.getElementById('period-end').onchange = (e) => { state.periodEnd = e.target.value; render(); };
+  document.getElementById('period-clear').onclick = () => {
+    state.periodStart = '';
+    state.periodEnd = '';
+    render();
+  };
+}
+
+function filteredEntries() {
+  const book = currentBook();
+  return book.entries.filter(e => {
+    if (state.periodStart && e.date < state.periodStart) return false;
+    if (state.periodEnd && e.date > state.periodEnd) return false;
+    return true;
+  });
+}
+
+function renderEntry(app) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="row">
+      <div class="field">
+        <label>日付</label>
+        <input type="date" id="f-date" value="${state.form.date}">
+      </div>
+      <div class="field" style="flex:2 1 240px;">
+        <label>摘要</label>
+        <input type="text" id="f-memo" value="${state.form.memo}" placeholder="スーパーで食材購入">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>借方科目</label>
+        <select id="f-debit"><option value="">選択してください</option>${accountOptions(state.form.debit)}</select>
+      </div>
+      <div class="field">
+        <label>貸方科目</label>
+        <select id="f-credit"><option value="">選択してください</option>${accountOptions(state.form.credit)}</select>
+      </div>
+      <div class="field">
+        <label>金額（円）</label>
+        <input type="number" id="f-amount" value="${state.form.amount}" placeholder="3000">
+      </div>
+    </div>
+    <button class="primary" id="f-submit">仕訳を記帳</button>
+  `;
+  app.appendChild(card);
+
+  document.getElementById('f-submit').onclick = async () => {
+    const date = document.getElementById('f-date').value;
+    const memo = document.getElementById('f-memo').value.trim();
+    const debit = document.getElementById('f-debit').value;
+    const credit = document.getElementById('f-credit').value;
+    const amount = parseFloat(document.getElementById('f-amount').value);
+
+    state.error = '';
+    if (!debit || !credit) { state.error = '借方と貸方の科目を選択してください。'; render(); return; }
+    if (debit === credit) { state.error = '借方と貸方に同じ科目は使えません。'; render(); return; }
+    if (!amount || amount <= 0) { state.error = '金額は正の数で入力してください。'; render(); return; }
+
+    const book = currentBook();
+    book.entries.push({ id: uid(), date, memo, debit, credit, amount });
+    book.entries.sort((a, b) => a.date.localeCompare(b.date));
+    await saveUserData();
+
+    state.form = { date, memo: '', debit: '', credit: '', amount: '' };
+    render();
+  };
+}
+
+function renderJournal(app) {
+  renderPeriodBar(app);
+  const card = document.createElement('div');
+  card.className = 'card';
+  const entries = filteredEntries();
+  if (entries.length === 0) {
+    card.innerHTML = '<p class="muted">指定期間の仕訳がありません。</p>';
+    app.appendChild(card);
+    return;
+  }
+  let rows = entries.map(e => `
+    <tr>
+      <td>${e.date}</td>
+      <td>${e.debit}</td>
+      <td>${e.credit}</td>
+      <td class="num">${fmt(e.amount)}</td>
+      <td style="color:#5f5e5a; cursor:pointer; text-decoration:underline dotted;" data-memo-id="${e.id}">${truncateMemo(e.memo)}</td>
+      <td><button class="link" data-id="${e.id}">削除</button></td>
+    </tr>
+  `).join('');
+  card.innerHTML = `
+    <table>
+      <thead><tr><th>日付</th><th>借方</th><th>貸方</th><th class="num">金額</th><th>摘要</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  app.appendChild(card);
+  card.querySelectorAll('[data-memo-id]').forEach(td => {
+    td.onclick = () => {
+      const e = entries.find(x => x.id === td.dataset.memoId);
+      state.viewingMemo = e ? e.memo : '';
+      state.modal = 'view-memo';
+      render();
+    };
+  });
+  card.querySelectorAll('button.link').forEach(btn => {
+    btn.onclick = async () => {
+      const book = currentBook();
+      const idx = book.entries.findIndex(e => e.id === btn.dataset.id);
+      if (idx === -1) return;
+      const [removed] = book.entries.splice(idx, 1);
+      if (!book.trash) book.trash = [];
+      removed.deletedAt = new Date().toISOString();
+      book.trash.push(removed);
+      await saveUserData();
+      render();
+    };
+  });
+}
+
+function truncateMemo(memo) {
+  if (!memo) return '(なし)';
+  return memo.length > 12 ? memo.slice(0, 12) + '…' : memo;
+}
+
+function computeBalances(entries, book) {
+  const map = {};
+  book.accounts.forEach(a => { map[a.name] = { type: a.type, debit: 0, credit: 0 }; });
+  entries.forEach(e => {
+    if (map[e.debit]) map[e.debit].debit += e.amount;
+    if (map[e.credit]) map[e.credit].credit += e.amount;
+  });
+  const result = {};
+  Object.entries(map).forEach(([name, v]) => {
+    const net = normalDebit(v.type) ? v.debit - v.credit : v.credit - v.debit;
+    result[name] = { type: v.type, debit: v.debit, credit: v.credit, balance: net };
+  });
+  return result;
+}
+
+// 指定した仕訳群について、科目区分ごとの増加額・減少額を集計する
+// 「増加」「減少」はその区分の正常残高方向を基準にする
+// (資産・費用は借方=増加、負債・純資産・収益は貸方=増加)
+function accountTypeDeltaSummary(entries, book) {
+  const summary = {};
+  TYPE_ORDER.forEach(t => { summary[t] = { increase: 0, decrease: 0 }; });
+  const accByName = {};
+  book.accounts.forEach(a => { accByName[a.name] = a; });
+
+  entries.forEach(e => {
+    const debitAcc = accByName[e.debit];
+    const creditAcc = accByName[e.credit];
+    if (debitAcc) {
+      if (normalDebit(debitAcc.type)) summary[debitAcc.type].increase += e.amount;
+      else summary[debitAcc.type].decrease += e.amount;
+    }
+    if (creditAcc) {
+      if (normalDebit(creditAcc.type)) summary[creditAcc.type].decrease += e.amount;
+      else summary[creditAcc.type].increase += e.amount;
+    }
+  });
+  return summary;
+}
+
+function renderLedger(app) {
+  renderPeriodBar(app);
+  const book = currentBook();
+  const balances = computeBalances(filteredEntries(), book);
+  TYPE_ORDER.forEach(type => {
+    const list = Object.entries(balances).filter(([, b]) => b.type === type);
+    if (list.length === 0) return;
+    const card = document.createElement('div');
+    card.className = 'card';
+    let rows = list.map(([name, b]) => `
+      <tr>
+        <td>${name}</td>
+        <td class="num">${fmt(b.debit)}</td>
+        <td class="num">${fmt(b.credit)}</td>
+        <td class="num" style="font-weight:600;">${fmt(b.balance)}</td>
+      </tr>
+    `).join('');
+    card.innerHTML = `
+      <h3>${TYPE_LABEL[type]}</h3>
+      <table>
+        <thead><tr><th>科目</th><th class="num">借方合計</th><th class="num">貸方合計</th><th class="num">残高</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+    app.appendChild(card);
+  });
+}
+
+function renderStatements(app) {
+  renderPeriodBar(app);
+  const book = currentBook();
+  const balances = computeBalances(filteredEntries(), book);
+  let assets = 0, liabilities = 0, revenue = 0, expense = 0;
+  Object.values(balances).forEach(b => {
+    if (b.type === 'asset') assets += b.balance;
+    else if (b.type === 'liability') liabilities += b.balance;
+    else if (b.type === 'revenue') revenue += b.balance;
+    else if (b.type === 'expense') expense += b.balance;
+  });
+  const netIncome = revenue - expense;
+
+  const bsCard = document.createElement('div');
+  bsCard.className = 'card';
+  const assetRows = Object.entries(balances).filter(([, b]) => b.type === 'asset')
+    .map(([n, b]) => `<div class="kv"><span>${n}</span><span>${fmt(b.balance)}</span></div>`).join('');
+  const liabRows = Object.entries(balances).filter(([, b]) => b.type === 'liability')
+    .map(([n, b]) => `<div class="kv"><span>${n}</span><span>${fmt(b.balance)}</span></div>`).join('');
+  bsCard.innerHTML = `
+    <h3>貸借対照表</h3>
+    <div class="grid2">
+      <div>
+        <p class="muted" style="font-size:13px; margin:0 0 8px;">資産</p>
+        ${assetRows}
+        <div class="kv total"><span>資産合計</span><span>${fmt(assets)}</span></div>
+      </div>
+      <div>
+        <p class="muted" style="font-size:13px; margin:0 0 8px;">負債・純資産</p>
+        ${liabRows}
+        <div class="kv"><span>当期純利益（繰入）</span><span>${fmt(netIncome)}</span></div>
+        <div class="kv total"><span>負債・純資産合計</span><span>${fmt(liabilities + netIncome)}</span></div>
+      </div>
+    </div>
+    ${Math.round(assets) !== Math.round(liabilities + netIncome)
+      ? `<p style="font-size:12px; color:#791f1f; margin-top:12px;">貸借が一致していません（資産 ${fmt(assets)} ≠ 負債+純資産 ${fmt(liabilities + netIncome)}）。仕訳内容を確認してください。</p>`
+      : ''}
+  `;
+  app.appendChild(bsCard);
+
+  const plCard = document.createElement('div');
+  plCard.className = 'card';
+  plCard.innerHTML = `
+    <h3>損益計算書</h3>
+    <div class="kv"><span>収益合計</span><span>${fmt(revenue)}</span></div>
+    <div class="kv"><span>費用合計</span><span>${fmt(expense)}</span></div>
+    <div class="kv total" style="font-size:14px;"><span>当期純利益</span><span>${fmt(netIncome)}</span></div>
+  `;
+  app.appendChild(plCard);
+}
+
+// カレンダー: 各日の資産の増加額・減少額を算出
+function assetDeltaByDate(book) {
+  const map = {};
+  const assetNames = new Set(book.accounts.filter(a => a.type === 'asset').map(a => a.name));
+  book.entries.forEach(e => {
+    if (!map[e.date]) map[e.date] = { increase: 0, decrease: 0 };
+    if (assetNames.has(e.debit)) map[e.date].increase += e.amount;
+    if (assetNames.has(e.credit)) map[e.date].decrease += e.amount;
+  });
+  return map;
+}
+
+function renderCalendar(app) {
+  const book = currentBook();
+  const year = state.calendarYear;
+  const month = state.calendarMonth; // 0-indexed
+  const deltas = assetDeltaByDate(book);
+  const today = todayStr();
+
+  const header = document.createElement('div');
+  header.className = 'cal-header';
+  header.innerHTML = `
+    <button id="cal-prev">‹</button>
+    <h3>${year}年 ${month + 1}月</h3>
+    <button id="cal-next">›</button>
+  `;
+  app.appendChild(header);
+  document.getElementById('cal-prev').onclick = () => {
+    state.calendarMonth -= 1;
+    if (state.calendarMonth < 0) { state.calendarMonth = 11; state.calendarYear -= 1; }
+    render();
+  };
+  document.getElementById('cal-next').onclick = () => {
+    state.calendarMonth += 1;
+    if (state.calendarMonth > 11) { state.calendarMonth = 0; state.calendarYear += 1; }
+    render();
+  };
+
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const grid = document.createElement('div');
+  grid.className = 'cal-grid';
+  ['日', '月', '火', '水', '木', '金', '土'].forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'cal-dow';
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+
+  const firstDay = new Date(year, month, 1);
+  const startWeekday = firstDay.getDay(); // 0=日曜
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  for (let i = 0; i < startWeekday; i++) {
+    const empty = document.createElement('div');
+    empty.className = 'cal-cell empty';
+    grid.appendChild(empty);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (dateStr === today ? ' today' : '');
+    const delta = deltas[dateStr];
+    let deltaHtml = '';
+    if (delta && (delta.increase || delta.decrease)) {
+      deltaHtml = `
+        <div class="cal-delta-plus">+${fmt(delta.increase)}</div>
+        <div class="cal-delta-minus">-${fmt(delta.decrease)}</div>
+      `;
+    }
+    cell.innerHTML = `<div class="cal-date">${d}</div>${deltaHtml}`;
+    cell.onclick = () => { state.selectedDate = dateStr; state.modal = 'day-summary'; render(); };
+    grid.appendChild(cell);
+  }
+
+  card.appendChild(grid);
+  app.appendChild(card);
+
+  const note = document.createElement('p');
+  note.className = 'muted';
+  note.style.fontSize = '12px';
+  note.textContent = '数字は資産勘定の増加額（緑）・減少額（赤）。日付をタップするとその日の科目区分別増減を確認できる。';
+  app.appendChild(note);
+}
+
+// 期間集計: 月・四半期・年で科目区分別の増加額・減少額を出す
+function renderPeriodSummary(app) {
+  const book = currentBook();
+
+  const basisRow = document.createElement('div');
+  basisRow.className = 'row';
+  basisRow.innerHTML = `
+    <div class="field">
+      <label>期間の基準</label>
+      <select id="ps-basis">
+        <option value="fiscal" ${state.periodBasis === 'fiscal' ? 'selected' : ''}>年度基準（4月始まり）</option>
+        <option value="calendar" ${state.periodBasis === 'calendar' ? 'selected' : ''}>暦年基準（1月始まり）</option>
+      </select>
+    </div>
+  `;
+  app.appendChild(basisRow);
+  document.getElementById('ps-basis').onchange = (e) => { state.periodBasis = e.target.value; render(); };
+
+  const toggle = document.createElement('div');
+  toggle.className = 'period-toggle';
+  [['month', '月'], ['quarter', '四半期'], ['year', '年']].forEach(([key, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'secondary' + (state.periodSummaryMode === key ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => { state.periodSummaryMode = key; render(); };
+    toggle.appendChild(btn);
+  });
+  app.appendChild(toggle);
+
+  let rangeStart, rangeEnd, rangeLabel;
+  const isFiscal = state.periodBasis === 'fiscal';
+
+  if (state.periodSummaryMode === 'month') {
+    const bar = document.createElement('div');
+    bar.className = 'row';
+    bar.innerHTML = `
+      <div class="field">
+        <label>対象月</label>
+        <input type="month" id="ps-month" value="${state.periodSummaryMonth}">
+      </div>
+    `;
+    app.appendChild(bar);
+    document.getElementById('ps-month').onchange = (e) => {
+      state.periodSummaryMonth = e.target.value;
+      render();
+    };
+    const [y, m] = state.periodSummaryMonth.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    rangeStart = state.periodSummaryMonth + '-01';
+    rangeEnd = state.periodSummaryMonth + '-' + String(lastDay).padStart(2, '0');
+    rangeLabel = `${y}年${m}月`;
+  } else if (state.periodSummaryMode === 'quarter') {
+    const bar = document.createElement('div');
+    bar.className = 'row';
+    if (isFiscal) {
+      bar.innerHTML = `
+        <div class="field">
+          <label>年度</label>
+          <input type="number" id="ps-fy" value="${state.periodSummaryFY}">
+        </div>
+        <div class="field">
+          <label>四半期</label>
+          <select id="ps-q">
+            <option value="1" ${state.periodSummaryQ === 1 ? 'selected' : ''}>第1四半期（4-6月）</option>
+            <option value="2" ${state.periodSummaryQ === 2 ? 'selected' : ''}>第2四半期（7-9月）</option>
+            <option value="3" ${state.periodSummaryQ === 3 ? 'selected' : ''}>第3四半期（10-12月）</option>
+            <option value="4" ${state.periodSummaryQ === 4 ? 'selected' : ''}>第4四半期（1-3月）</option>
+          </select>
+        </div>
+      `;
+    } else {
+      bar.innerHTML = `
+        <div class="field">
+          <label>年</label>
+          <input type="number" id="ps-fy" value="${state.periodSummaryFY}">
+        </div>
+        <div class="field">
+          <label>四半期</label>
+          <select id="ps-q">
+            <option value="1" ${state.periodSummaryQ === 1 ? 'selected' : ''}>第1四半期（1-3月）</option>
+            <option value="2" ${state.periodSummaryQ === 2 ? 'selected' : ''}>第2四半期（4-6月）</option>
+            <option value="3" ${state.periodSummaryQ === 3 ? 'selected' : ''}>第3四半期（7-9月）</option>
+            <option value="4" ${state.periodSummaryQ === 4 ? 'selected' : ''}>第4四半期（10-12月）</option>
+          </select>
+        </div>
+      `;
+    }
+    app.appendChild(bar);
+    document.getElementById('ps-fy').onchange = (e) => { state.periodSummaryFY = parseInt(e.target.value, 10); render(); };
+    document.getElementById('ps-q').onchange = (e) => { state.periodSummaryQ = parseInt(e.target.value, 10); render(); };
+    if (isFiscal) {
+      const [s, en] = fiscalQuarterRange(state.periodSummaryFY, state.periodSummaryQ);
+      rangeStart = s; rangeEnd = en;
+      rangeLabel = `${state.periodSummaryFY}年度 第${state.periodSummaryQ}四半期`;
+    } else {
+      const [s, en] = calendarQuarterRange(state.periodSummaryFY, state.periodSummaryQ);
+      rangeStart = s; rangeEnd = en;
+      rangeLabel = `${state.periodSummaryFY}年 第${state.periodSummaryQ}四半期`;
+    }
+  } else {
+    const bar = document.createElement('div');
+    bar.className = 'row';
+    bar.innerHTML = `
+      <div class="field">
+        <label>${isFiscal ? '年度（4月始まり）' : '年（1月始まり）'}</label>
+        <input type="number" id="ps-fy-year" value="${state.periodSummaryFY}">
+      </div>
+    `;
+    app.appendChild(bar);
+    document.getElementById('ps-fy-year').onchange = (e) => { state.periodSummaryFY = parseInt(e.target.value, 10); render(); };
+    if (isFiscal) {
+      const [s, en] = fiscalYearRange(state.periodSummaryFY);
+      rangeStart = s; rangeEnd = en;
+      rangeLabel = `${state.periodSummaryFY}年度`;
+    } else {
+      const [s, en] = calendarYearRange(state.periodSummaryFY);
+      rangeStart = s; rangeEnd = en;
+      rangeLabel = `${state.periodSummaryFY}年`;
+    }
+  }
+
+  const entries = book.entries.filter(e => e.date >= rangeStart && e.date <= rangeEnd);
+  const summary = accountTypeDeltaSummary(entries, book);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <h3>${rangeLabel}（${rangeStart} 〜 ${rangeEnd}）</h3>
+    ${entries.length === 0 ? '<p class="muted">この期間の仕訳はありません。</p>' : ''}
+    <table>
+      <thead><tr><th>区分</th><th class="num">増加額</th><th class="num">減少額</th></tr></thead>
+      <tbody>
+        ${TYPE_ORDER.map(type => `
+          <tr>
+            <td>${TYPE_LABEL[type]}</td>
+            <td class="num cal-delta-plus">+${fmt(summary[type].increase)}</td>
+            <td class="num cal-delta-minus">-${fmt(summary[type].decrease)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+  app.appendChild(card);
+
+  // 年次PDF出力セクション
+  const pdfCard = document.createElement('div');
+  pdfCard.className = 'card';
+  pdfCard.innerHTML = `
+    <h3>年次PDF出力</h3>
+    <p class="muted" style="font-size:13px;">指定した1年分の仕訳帳・総勘定元帳・財務諸表を1つのPDFにまとめて出力します。</p>
+    <div class="row">
+      <div class="field">
+        <label>${isFiscal ? '対象年度（4月始まり）' : '対象年（1月始まり）'}</label>
+        <input type="number" id="pdf-year" value="${state.pdfExportYear}">
+      </div>
+    </div>
+    <button class="primary" id="pdf-export" ${state.pdfExporting ? 'disabled' : ''}>${state.pdfExporting ? '生成中…' : 'PDFを生成'}</button>
+  `;
+  app.appendChild(pdfCard);
+  document.getElementById('pdf-year').onchange = (e) => { state.pdfExportYear = parseInt(e.target.value, 10); };
+  document.getElementById('pdf-export').onclick = () => exportYearlyPdf(book, state.pdfExportYear, isFiscal);
+}
+
+async function exportYearlyPdf(book, year, isFiscal) {
+  state.pdfExporting = true;
+  render();
+
+  try {
+    const [rangeStart, rangeEnd] = isFiscal ? fiscalYearRange(year) : calendarYearRange(year);
+    const rangeLabel = isFiscal ? `${year}年度` : `${year}年`;
+    const entries = book.entries.filter(e => e.date >= rangeStart && e.date <= rangeEnd);
+    const balances = computeBalances(entries, book);
+
+    let assets = 0, liabilities = 0, revenue = 0, expense = 0;
+    Object.values(balances).forEach(b => {
+      if (b.type === 'asset') assets += b.balance;
+      else if (b.type === 'liability') liabilities += b.balance;
+      else if (b.type === 'revenue') revenue += b.balance;
+      else if (b.type === 'expense') expense += b.balance;
+    });
+    const netIncome = revenue - expense;
+
+    // オフスクリーンのレンダリング用コンテナを作る
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '780px';
+    container.style.background = '#fff';
+    container.style.padding = '24px';
+    container.style.fontFamily = "'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif";
+    container.style.color = '#1a1a1a';
+
+    let journalRows = entries.map(e => `
+      <tr>
+        <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.date}</td>
+        <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.debit}</td>
+        <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.credit}</td>
+        <td style="padding:4px 6px; border-bottom:1px solid #ddd; text-align:right;">${fmt(e.amount)}</td>
+        <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.memo || ''}</td>
+      </tr>
+    `).join('');
+
+    let ledgerHtml = '';
+    TYPE_ORDER.forEach(type => {
+      const list = Object.entries(balances).filter(([, b]) => b.type === type);
+      if (list.length === 0) return;
+      ledgerHtml += `
+        <h4 style="margin:16px 0 6px;">${TYPE_LABEL[type]}</h4>
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #888;">科目</th>
+              <th style="text-align:right; padding:4px 6px; border-bottom:1px solid #888;">借方合計</th>
+              <th style="text-align:right; padding:4px 6px; border-bottom:1px solid #888;">貸方合計</th>
+              <th style="text-align:right; padding:4px 6px; border-bottom:1px solid #888;">残高</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list.map(([name, b]) => `
+              <tr>
+                <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${name}</td>
+                <td style="padding:4px 6px; border-bottom:1px solid #ddd; text-align:right;">${fmt(b.debit)}</td>
+                <td style="padding:4px 6px; border-bottom:1px solid #ddd; text-align:right;">${fmt(b.credit)}</td>
+                <td style="padding:4px 6px; border-bottom:1px solid #ddd; text-align:right; font-weight:600;">${fmt(b.balance)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    });
+
+    const assetRowsHtml = Object.entries(balances).filter(([, b]) => b.type === 'asset')
+      .map(([n, b]) => `<div style="display:flex; justify-content:space-between; font-size:12px; padding:2px 0;"><span>${n}</span><span>${fmt(b.balance)}</span></div>`).join('');
+    const liabRowsHtml = Object.entries(balances).filter(([, b]) => b.type === 'liability')
+      .map(([n, b]) => `<div style="display:flex; justify-content:space-between; font-size:12px; padding:2px 0;"><span>${n}</span><span>${fmt(b.balance)}</span></div>`).join('');
+
+    container.innerHTML = `
+      <div style="margin-bottom:32px;">
+        <h1 style="font-size:20px; margin:0 0 4px;">${book.name}</h1>
+        <p style="font-size:13px; color:#5f5e5a; margin:0;">${rangeLabel}（${rangeStart} 〜 ${rangeEnd}）</p>
+      </div>
+
+      <div style="margin-bottom:32px;">
+        <h2 style="font-size:16px; border-bottom:2px solid #1a1a1a; padding-bottom:4px;">仕訳帳</h2>
+        ${entries.length === 0 ? '<p style="font-size:13px; color:#888;">この期間の仕訳はありません。</p>' : `
+        <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:8px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #888;">日付</th>
+              <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #888;">借方</th>
+              <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #888;">貸方</th>
+              <th style="text-align:right; padding:4px 6px; border-bottom:1px solid #888;">金額</th>
+              <th style="text-align:left; padding:4px 6px; border-bottom:1px solid #888;">摘要</th>
+            </tr>
+          </thead>
+          <tbody>${journalRows}</tbody>
+        </table>
+        `}
+      </div>
+
+      <div style="margin-bottom:32px;">
+        <h2 style="font-size:16px; border-bottom:2px solid #1a1a1a; padding-bottom:4px;">総勘定元帳</h2>
+        ${ledgerHtml || '<p style="font-size:13px; color:#888;">データがありません。</p>'}
+      </div>
+
+      <div>
+        <h2 style="font-size:16px; border-bottom:2px solid #1a1a1a; padding-bottom:4px;">財務諸表</h2>
+        <h3 style="font-size:14px; margin:16px 0 6px;">貸借対照表</h3>
+        <div style="display:flex; gap:24px;">
+          <div style="flex:1;">
+            <p style="font-size:12px; color:#5f5e5a; margin:0 0 6px;">資産</p>
+            ${assetRowsHtml}
+            <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; border-top:1px solid #888; margin-top:4px; padding-top:4px;"><span>資産合計</span><span>${fmt(assets)}</span></div>
+          </div>
+          <div style="flex:1;">
+            <p style="font-size:12px; color:#5f5e5a; margin:0 0 6px;">負債・純資産</p>
+            ${liabRowsHtml}
+            <div style="display:flex; justify-content:space-between; font-size:12px; padding:2px 0;"><span>当期純利益（繰入）</span><span>${fmt(netIncome)}</span></div>
+            <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; border-top:1px solid #888; margin-top:4px; padding-top:4px;"><span>負債・純資産合計</span><span>${fmt(liabilities + netIncome)}</span></div>
+          </div>
+        </div>
+        <h3 style="font-size:14px; margin:20px 0 6px;">損益計算書</h3>
+        <div style="display:flex; justify-content:space-between; font-size:12px; padding:2px 0;"><span>収益合計</span><span>${fmt(revenue)}</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; padding:2px 0;"><span>費用合計</span><span>${fmt(expense)}</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:600; border-top:1px solid #888; margin-top:4px; padding-top:4px;"><span>当期純利益</span><span>${fmt(netIncome)}</span></div>
+      </div>
+    `;
+
+    document.body.appendChild(container);
+
+    const canvas = await html2canvas(container, { scale: 2, useCORS: true });
+    document.body.removeChild(container);
+
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    const fileName = `${book.name}_${rangeLabel}_仕訳帳・総勘定元帳・財務諸表.pdf`;
+    pdf.save(fileName);
+  } catch (err) {
+    state.error = 'PDF生成に失敗しました: ' + err.message;
+  }
+
+  state.pdfExporting = false;
+  render();
+}
+
+function renderTrash(app) {
+  const book = currentBook();
+  const trash = book.trash || [];
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  if (trash.length === 0) {
+    card.innerHTML = '<p class="muted">ゴミ箱は空です。</p>';
+    app.appendChild(card);
+    return;
+  }
+
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  let rows = trash.map(e => {
+    const deletedAt = new Date(e.deletedAt).getTime();
+    const daysLeft = Math.max(0, Math.ceil((THIRTY_DAYS_MS - (now - deletedAt)) / (24 * 60 * 60 * 1000)));
+    return `
+      <tr>
+        <td>${e.date}</td>
+        <td>${e.debit}</td>
+        <td>${e.credit}</td>
+        <td class="num">${fmt(e.amount)}</td>
+        <td style="color:#5f5e5a;">${truncateMemo(e.memo)}</td>
+        <td style="color:#888780; font-size:12px;">残り${daysLeft}日</td>
+        <td>
+          <button class="link" style="color:#1b7a3d;" data-restore-id="${e.id}">復元</button>
+          <button class="link" data-purge-id="${e.id}">完全削除</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  card.innerHTML = `
+    <p class="muted" style="font-size:12px;">削除した仕訳は30日間ここに保存され、その後自動的に完全削除される。</p>
+    <table>
+      <thead><tr><th>日付</th><th>借方</th><th>貸方</th><th class="num">金額</th><th>摘要</th><th>期限</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  app.appendChild(card);
+
+  card.querySelectorAll('[data-restore-id]').forEach(btn => {
+    btn.onclick = async () => {
+      const idx = book.trash.findIndex(e => e.id === btn.dataset.restoreId);
+      if (idx === -1) return;
+      const [restored] = book.trash.splice(idx, 1);
+      delete restored.deletedAt;
+      book.entries.push(restored);
+      book.entries.sort((a, b) => a.date.localeCompare(b.date));
+      await saveUserData();
+      render();
+    };
+  });
+
+  card.querySelectorAll('[data-purge-id]').forEach(btn => {
+    btn.onclick = async () => {
+      book.trash = book.trash.filter(e => e.id !== btn.dataset.purgeId);
+      await saveUserData();
+      render();
+    };
+  });
+}
+
+function renderAccounts(app) {
+  const book = currentBook();
+  const formCard = document.createElement('div');
+  formCard.className = 'card';
+  formCard.innerHTML = `
+    <div class="row">
+      <div class="field">
+        <label>科目名</label>
+        <input type="text" id="a-name" value="${state.accForm.name}" placeholder="書籍代">
+      </div>
+      <div class="field">
+        <label>区分</label>
+        <select id="a-type">${TYPE_ORDER.map(t => `<option value="${t}" ${t === state.accForm.type ? 'selected' : ''}>${TYPE_LABEL[t]}</option>`).join('')}</select>
+      </div>
+    </div>
+    <button class="primary" id="a-submit">科目を追加</button>
+  `;
+  app.appendChild(formCard);
+
+  document.getElementById('a-submit').onclick = async () => {
+    const name = document.getElementById('a-name').value.trim();
+    const type = document.getElementById('a-type').value;
+    state.error = '';
+    if (!name) { state.error = '科目名を入力してください。'; render(); return; }
+    if (book.accounts.some(a => a.name === name)) { state.error = '同じ名前の科目が既に存在します。'; render(); return; }
+    book.accounts.push({ id: uid(), name, type });
+    await saveUserData();
+    state.accForm = { name: '', type: 'expense' };
+    render();
+  };
+
+  const listCard = document.createElement('div');
+  listCard.className = 'card';
+  let rows = book.accounts.map(a => `
+    <tr>
+      <td>${a.name}</td>
+      <td style="color:#5f5e5a;">${TYPE_LABEL[a.type]}</td>
+      <td>
+        <button class="link" data-edit-id="${a.id}" style="color:#1a1a1a;">編集</button>
+        <button class="link" data-id="${a.id}">削除</button>
+      </td>
+    </tr>
+  `).join('');
+  listCard.innerHTML = `
+    <table>
+      <thead><tr><th>科目名</th><th>区分</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  app.appendChild(listCard);
+
+  listCard.querySelectorAll('button[data-edit-id]').forEach(btn => {
+    btn.onclick = () => {
+      state.editingAccountId = btn.dataset.editId;
+      state.modal = 'edit-account';
+      render();
+    };
+  });
+
+  listCard.querySelectorAll('button.link[data-id]').forEach(btn => {
+    btn.onclick = async () => {
+      const acc = book.accounts.find(a => a.id === btn.dataset.id);
+      if (!acc) return;
+      const inUse = book.entries.some(e => e.debit === acc.name || e.credit === acc.name);
+      state.error = '';
+      if (inUse) { state.error = `科目「${acc.name}」は仕訳で使用されているため削除できません。`; render(); return; }
+      book.accounts = book.accounts.filter(a => a.id !== acc.id);
+      await saveUserData();
+      render();
+    };
+  });
+}
+
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    state.user = user;
+    renderLoading('データを読み込んでいます...');
+    await loadUserData();
+    render();
+  } else {
+    state.user = null;
+    render();
+  }
+});
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function() {});
+}
+</script>
+</body>
+</html>
