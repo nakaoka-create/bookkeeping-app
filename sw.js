@@ -1,5 +1,5 @@
 // バージョンを上げるたびに CACHE_NAME を変えると、旧キャッシュが確実に破棄される
-const CACHE_NAME = 'bookkeeping-v7';
+const CACHE_NAME = 'bookkeeping-v8';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', function(event) {

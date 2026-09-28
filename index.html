@@ -215,6 +215,37 @@
   .cal-week-body { flex: 1; display: flex; gap: 16px; }
   .cal-week-count { font-size: 12px; color: #5f5e5a; min-width: 32px; text-align: right; }
   .cal-day-head { display: flex; gap: 32px; }
+  /* 週リスト（週ビュー） */
+  .week-list-card { padding: 10px; }
+  .week-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 72px;
+    box-sizing: border-box;
+    padding: 0 14px;
+    border: 1px solid #e5e3da;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    background: #fff;
+  }
+  .week-card:last-child { margin-bottom: 0; }
+  .week-card:hover, .week-card:active { background: #f7f6f2; }
+  .week-card.current { border-color: #1a1a1a; border-width: 2px; }
+  .week-card-range { font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .week-card-sub { font-size: 11px; color: #888780; margin-top: 3px; }
+  .week-card-right { text-align: right; }
+  .week-card-net { font-size: 17px; font-weight: 700; }
+  .week-card-detail { font-size: 11px; margin-top: 3px; display: flex; gap: 8px; justify-content: flex-end; }
+  .week-net-zero { color: #888780; }
+  /* 月ビューの横スワイプ */
+  .swipe-area { touch-action: pan-y; }
+  @keyframes slideInNext { from { transform: translateX(48px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes slideInPrev { from { transform: translateX(-48px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .swipe-area.slide-next { animation: slideInNext 0.22s ease-out; }
+  .swipe-area.slide-prev { animation: slideInPrev 0.22s ease-out; }
   .period-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
   .period-toggle button.active { background: #fff; border-color: #888780; font-weight: 600; }
 </style>
@@ -458,6 +489,9 @@ function render() {
   if (!state.user) { renderLogin(); return; }
 
   const app = document.getElementById('app');
+  // カレンダーで同じ表示のまま再描画される場合（モーダル開閉など）はスクロール位置を維持する
+  const keepScroll = state.tab === 'calendar' && state._renderedKey === 'calendar:' + state.calendarView;
+  const prevScrollY = window.scrollY;
   app.innerHTML = '';
 
   const topbar = document.createElement('div');
@@ -524,6 +558,9 @@ function render() {
   else if (state.tab === 'trash') renderTrash(app);
 
   if (state.modal) renderModal(app);
+
+  state._renderedKey = state.tab === 'calendar' ? 'calendar:' + state.calendarView : state.tab;
+  if (keepScroll) window.scrollTo(0, prevScrollY);
 }
 
 // 仕訳の編集・削除確認モーダルを閉じる。日別モーダルから開いていた場合はそちらへ戻る
@@ -1285,6 +1322,40 @@ function shiftCalendar(direction) {
   render();
 }
 
+// 週の表示ラベル（モーダルのタイトル用）
+function weekLabelOf(weekStart) {
+  const s = strToDate(weekStart);
+  const e = strToDate(addDays(weekStart, 6));
+  const sameYear = s.getFullYear() === e.getFullYear();
+  return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 〜 ${sameYear ? '' : e.getFullYear() + '年'}${e.getMonth() + 1}月${e.getDate()}日`;
+}
+
+// 週ごとの資産増減を一括集計し、新しい週→古い週の配列で返す
+function buildWeekList(book) {
+  const assetNames = new Set(book.accounts.filter(a => a.type === 'asset').map(a => a.name));
+  const map = {};
+  let minDate = null, maxDate = null;
+  book.entries.forEach(e => {
+    const ws = startOfWeek(e.date);
+    const w = map[ws] || (map[ws] = { increase: 0, decrease: 0, count: 0 });
+    w.count += 1;
+    if (assetNames.has(e.debit)) w.increase += e.amount;
+    if (assetNames.has(e.credit)) w.decrease += e.amount;
+    if (minDate === null || e.date < minDate) minDate = e.date;
+    if (maxDate === null || e.date > maxDate) maxDate = e.date;
+  });
+  const today = todayStr();
+  const top = startOfWeek(maxDate && maxDate > today ? maxDate : today);
+  const fallbackBottom = addDays(startOfWeek(today), -7 * 11); // 最低でも直近12週は表示
+  const bottom = startOfWeek(minDate && minDate < fallbackBottom ? minDate : fallbackBottom);
+  const list = [];
+  for (let ws = top; ws >= bottom; ws = addDays(ws, -7)) {
+    const w = map[ws] || { increase: 0, decrease: 0, count: 0 };
+    list.push({ start: ws, end: addDays(ws, 6), ...w });
+  }
+  return list;
+}
+
 function deltaHtml(delta) {
   if (!delta || (!delta.increase && !delta.decrease)) return '';
   return `
@@ -1313,26 +1384,54 @@ function renderCalendar(app) {
   todayBtn.className = 'secondary';
   todayBtn.textContent = '今日';
   todayBtn.style.marginLeft = 'auto';
-  todayBtn.onclick = () => { state.calendarAnchor = todayStr(); render(); };
+  todayBtn.onclick = () => { state.calendarAnchor = todayStr(); render(); if (state.calendarView === 'week') window.scrollTo(0, 0); };
   toggle.appendChild(todayBtn);
   app.appendChild(toggle);
 
   // 前後ナビ
-  const header = document.createElement('div');
-  header.className = 'cal-header';
-  header.innerHTML = `
-    <button id="cal-prev">‹</button>
-    <h3>${calendarRangeLabel()}</h3>
-    <button id="cal-next">›</button>
-  `;
-  app.appendChild(header);
-  document.getElementById('cal-prev').onclick = () => shiftCalendar(-1);
-  document.getElementById('cal-next').onclick = () => shiftCalendar(1);
+  if (view === 'week') {
+    // 週ビューは縦スクロールのリストなので前後ボタンは不要
+    const header = document.createElement('div');
+    header.className = 'cal-header';
+    header.innerHTML = `<h3>週ごとの収支</h3><span class="muted" style="font-size:12px;">下にスクロールで過去の週</span>`;
+    app.appendChild(header);
+  } else {
+    const header = document.createElement('div');
+    header.className = 'cal-header';
+    header.innerHTML = `
+      <button id="cal-prev">‹</button>
+      <h3>${calendarRangeLabel()}</h3>
+      <button id="cal-next">›</button>
+    `;
+    app.appendChild(header);
+    document.getElementById('cal-prev').onclick = () => shiftCalendar(-1);
+    document.getElementById('cal-next').onclick = () => shiftCalendar(1);
+  }
 
   const card = document.createElement('div');
   card.className = 'card';
 
   if (view === 'month') {
+    // 横スワイプで前月・翌月へ移動（左スワイプ=翌月、右スワイプ=前月）
+    card.classList.add('swipe-area');
+    if (state.calSlide) { card.classList.add('slide-' + state.calSlide); state.calSlide = null; }
+    let sx = 0, sy = 0, tracking = false;
+    card.addEventListener('touchstart', (ev) => {
+      if (ev.touches.length !== 1) { tracking = false; return; }
+      sx = ev.touches[0].clientX; sy = ev.touches[0].clientY; tracking = true;
+    }, { passive: true });
+    card.addEventListener('touchend', (ev) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = ev.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        const dir = dx < 0 ? 1 : -1;
+        state.calSlide = dir > 0 ? 'next' : 'prev';
+        shiftCalendar(dir);
+      }
+    }, { passive: true });
+
     const anchor = strToDate(state.calendarAnchor);
     const year = anchor.getFullYear();
     const month = anchor.getMonth();
@@ -1366,27 +1465,33 @@ function renderCalendar(app) {
     }
     card.appendChild(grid);
   } else if (view === 'week') {
-    const weekStart = startOfWeek(state.calendarAnchor);
-    const wr = currentWeekRange();
-    card.appendChild(rangeTotalBar(book, wr.start, wr.end, calendarRangeLabel()));
-    for (let i = 0; i < 7; i++) {
-      const dateStr = addDays(weekStart, i);
-      const d = strToDate(dateStr);
-      const count = book.entries.filter(e => e.date === dateStr).length;
+    // 週初め〜週終わり＋その週の収支を、横長カードで縦に並べる（新しい週が上）
+    card.classList.add('week-list-card');
+    const currentWeek = startOfWeek(today);
+    buildWeekList(book).forEach(w => {
+      const s = strToDate(w.start), e = strToDate(w.end);
+      const net = w.increase - w.decrease;
+      const netCls = net > 0 ? 'cal-delta-plus' : net < 0 ? 'cal-delta-minus' : 'week-net-zero';
+      const yearText = s.getFullYear() === e.getFullYear() ? `${s.getFullYear()}年` : `${s.getFullYear()}年〜${e.getFullYear()}年`;
       const row = document.createElement('div');
-      row.className = 'cal-week-row' + (dateStr === today ? ' today' : '');
-      row.setAttribute('data-date', dateStr);
+      row.className = 'week-card' + (w.start === currentWeek ? ' current' : '');
+      row.setAttribute('data-week-start', w.start);
       row.innerHTML = `
-        <div class="cal-week-date">
-          <div class="cal-date">${d.getMonth() + 1}/${d.getDate()}</div>
-          <div class="cal-week-dow">${DOW_LABELS[d.getDay()]}</div>
+        <div>
+          <div class="week-card-range">${s.getMonth() + 1}/${s.getDate()}（日）〜 ${e.getMonth() + 1}/${e.getDate()}（土）</div>
+          <div class="week-card-sub">${yearText}${w.start === currentWeek ? '・今週' : ''}${w.count > 0 ? '・' + w.count + '件' : ''}</div>
         </div>
-        <div class="cal-week-body">${deltaHtml(deltas[dateStr]) || '<span class="muted" style="font-size:12px;">—</span>'}</div>
-        <div class="cal-week-count">${count > 0 ? count + '件' : ''}</div>
+        <div class="week-card-right">
+          <div class="week-card-net ${netCls}">${net > 0 ? '+' : net < 0 ? '-' : ''}${fmt(Math.abs(net))}</div>
+          <div class="week-card-detail">
+            <span class="cal-delta-plus">+${fmt(w.increase)}</span>
+            <span class="cal-delta-minus">-${fmt(w.decrease)}</span>
+          </div>
+        </div>
       `;
-      row.onclick = () => openDaySummary(dateStr);
+      row.onclick = () => openRangeSummary(w.start, w.end, weekLabelOf(w.start));
       card.appendChild(row);
-    }
+    });
   } else {
     const dateStr = state.calendarAnchor;
     const dayEntries = book.entries.filter(e => e.date === dateStr);
@@ -1425,7 +1530,11 @@ function renderCalendar(app) {
   const note = document.createElement('p');
   note.className = 'muted';
   note.style.fontSize = '12px';
-  note.textContent = '数字は資産勘定の増加額（緑）・減少額（赤）。日付をタップすると、その日の科目別増減と仕訳を確認できる。';
+  note.textContent = view === 'week'
+    ? '大きい数字は週の差引（資産の増加−減少）、下の緑・赤は増加額・減少額。週をタップすると、その週の科目別増減と仕訳を確認できる。'
+    : view === 'month'
+      ? '数字は資産勘定の増加額（緑）・減少額（赤）。日付をタップすると、その日の科目別増減と仕訳を確認できる。カレンダーを左右にスワイプすると月を切り替えられる。'
+      : '数字は資産勘定の増加額（緑）・減少額（赤）。日付をタップすると、その日の科目別増減と仕訳を確認できる。';
   app.appendChild(note);
 }
 
