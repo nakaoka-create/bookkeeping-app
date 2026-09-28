@@ -1,5 +1,5 @@
 // バージョンを上げるたびに CACHE_NAME を変えると、旧キャッシュが確実に破棄される
-const CACHE_NAME = 'bookkeeping-v8';
+const CACHE_NAME = 'bookkeeping-v9';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', function(event) {
@@ -32,7 +32,8 @@ self.addEventListener('fetch', function(event) {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    fetch(req).then(function(res) {
+    // cache:'no-cache' でブラウザのHTTPキャッシュ（GitHub Pagesは約10分）を経由せず、毎回サーバーに最新か確認する
+    fetch(req, { cache: 'no-cache' }).then(function(res) {
       if (res && res.status === 200) {
         const copy = res.clone();
         caches.open(CACHE_NAME).then(function(cache) { cache.put(req, copy); });
