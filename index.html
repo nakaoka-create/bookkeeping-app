@@ -184,6 +184,37 @@
   .cal-date { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
   .cal-delta-plus { color: #1b7a3d; }
   .cal-delta-minus { color: #a32d2d; }
+  .cal-week-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 8px;
+    border: 1px solid #e5e3da;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .cal-week-row:hover { background: #f7f6f2; }
+  .cal-total-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: #f7f6f2;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  .cal-total-bar:hover { background: #efede5; }
+  .cal-week-row.today { border-color: #1a1a1a; border-width: 2px; }
+  .cal-week-date { width: 48px; text-align: center; }
+  .cal-week-dow { font-size: 11px; color: #888780; }
+  .cal-week-body { flex: 1; display: flex; gap: 16px; }
+  .cal-week-count { font-size: 12px; color: #5f5e5a; min-width: 32px; text-align: right; }
+  .cal-day-head { display: flex; gap: 32px; }
   .period-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
   .period-toggle button.active { background: #fff; border-color: #888780; font-weight: 600; }
 </style>
@@ -231,7 +262,24 @@ const TYPE_ORDER = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function normalDebit(type) { return type === 'asset' || type === 'expense'; }
 function fmt(n) { return Math.round(n).toLocaleString('ja-JP'); }
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function pad2(n) { return String(n).padStart(2, '0'); }
+function dateToStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function strToDate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+// ローカルタイムゾーン基準の今日（toISOStringだとUTC基準になり、日本時間の午前0〜9時に前日になる）
+function todayStr() { return dateToStr(new Date()); }
+function addDays(dateStr, n) { const d = strToDate(dateStr); d.setDate(d.getDate() + n); return dateToStr(d); }
+function addMonths(dateStr, n) {
+  const d = strToDate(dateStr);
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + n);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  return dateToStr(d);
+}
+// 日曜始まりの週の開始日
+function startOfWeek(dateStr) { const d = strToDate(dateStr); d.setDate(d.getDate() - d.getDay()); return dateToStr(d); }
+const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 function firstOfMonthStr() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
@@ -289,14 +337,16 @@ let state = {
   currentBookId: null,
   tab: 'entry',
   error: '',
-  periodStart: firstOfMonthStr(),
+  periodStart: todayStr(),
   periodEnd: todayStr(),
   form: { date: todayStr(), memo: '', debit: '', credit: '', amount: '' },
   accForm: { name: '', type: 'expense' },
   modal: null,
-  calendarYear: new Date().getFullYear(),
-  calendarMonth: new Date().getMonth(), // 0-indexed
+  calendarView: 'month', // 'day' | 'week' | 'month'
+  calendarAnchor: todayStr(), // 表示の基準日 'YYYY-MM-DD'
+  daySummaryMode: 'summary', // 'summary'（科目別増減）| 'entries'（その日の仕訳）
   selectedDate: null,
+  selectedRange: null, // { start, end, label } 週・月単位でモーダルを開く用。日単位は selectedDate を使う
   periodSummaryMode: 'month', // 'month' | 'quarter' | 'year'
   periodSummaryMonth: firstOfMonthStr().slice(0, 7), // 'YYYY-MM'
   periodSummaryFY: fiscalYearOf(todayStr()),
@@ -306,6 +356,11 @@ let state = {
   pdfExporting: false,
   editingAccountId: null,
   viewingMemo: null,
+  confirmEntryId: null,
+  confirmPurgeId: null,
+  editingEntryId: null,
+  entryDraft: null,
+  returnModal: null,
 };
 
 function currentBook() {
@@ -471,6 +526,12 @@ function render() {
   if (state.modal) renderModal(app);
 }
 
+// 仕訳の編集・削除確認モーダルを閉じる。日別モーダルから開いていた場合はそちらへ戻る
+function closeEntryModal() {
+  state.modal = state.returnModal || null;
+  state.returnModal = null;
+}
+
 function renderModal(app) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -558,30 +619,103 @@ function renderModal(app) {
     };
   } else if (state.modal === 'day-summary') {
     const book = currentBook();
-    const date = state.selectedDate;
-    const dayEntries = book.entries.filter(e => e.date === date);
-    const summary = accountTypeDeltaSummary(dayEntries, book);
+    // 単日（selectedDate）と期間（selectedRange）の両対応
+    const range = state.selectedRange
+      ? state.selectedRange
+      : { start: state.selectedDate, end: state.selectedDate, label: null };
+    const isRange = range.start !== range.end;
+    const dayEntries = entriesInRange(book, range.start, range.end)
+      .slice().sort((a, b) => a.date.localeCompare(b.date));
+    const mode = state.daySummaryMode;
+    const emptyMsg = isRange ? 'この期間の仕訳はありません。' : 'この日の仕訳はありません。';
+    const entriesTabLabel = isRange ? 'この期間の仕訳' : 'その日の仕訳';
+
+    let title;
+    if (isRange) {
+      title = range.label || (range.start + ' 〜 ' + range.end);
+    } else {
+      title = range.start + '（' + DOW_LABELS[strToDate(range.start).getDay()] + '）';
+    }
+
+    const entryCard = e => `
+      <div style="border:1px solid #e5e3da; border-radius:8px; padding:8px 10px; margin-bottom:8px; font-size:13px;">
+        <div style="display:flex; justify-content:space-between; gap:8px;">
+          <span>${e.debit} ／ ${e.credit}</span>
+          <span style="font-weight:600;">${fmt(e.amount)}円</span>
+        </div>
+        <div style="color:#5f5e5a; margin-top:2px; white-space:pre-wrap;">${e.memo || '(摘要なし)'}</div>
+        <div style="margin-top:4px;">
+          <button class="link" style="color:#1a1a1a;" data-day-edit="${e.id}">編集</button>
+          <button class="link" data-day-delete="${e.id}">削除</button>
+        </div>
+      </div>
+    `;
+
+    let bodyHtml = '';
+    if (mode === 'summary') {
+      const summary = accountTypeDeltaSummary(dayEntries, book);
+      bodyHtml = `
+        ${dayEntries.length === 0 ? `<p class="muted">${emptyMsg}</p>` : ''}
+        ${TYPE_ORDER.map(type => `
+          <div class="kv">
+            <span>${TYPE_LABEL[type]}</span>
+            <span>
+              <span class="cal-delta-plus">+${fmt(summary[type].increase)}</span>
+              &nbsp;/&nbsp;
+              <span class="cal-delta-minus">-${fmt(summary[type].decrease)}</span>
+            </span>
+          </div>
+        `).join('')}
+      `;
+    } else if (dayEntries.length === 0) {
+      bodyHtml = `<p class="muted">${emptyMsg}</p>`;
+    } else if (!isRange) {
+      bodyHtml = dayEntries.map(entryCard).join('');
+    } else {
+      // 期間表示は日付ごとにまとめる
+      const byDate = {};
+      dayEntries.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+      bodyHtml = Object.keys(byDate).sort().map(d => `
+        <div style="font-size:12px; color:#5f5e5a; margin:10px 0 4px;">${d}（${DOW_LABELS[strToDate(d).getDay()]}）</div>
+        ${byDate[d].map(entryCard).join('')}
+      `).join('');
+    }
 
     modal.innerHTML = `
-      <h3>${date} の科目区分別増減</h3>
-      ${dayEntries.length === 0 ? '<p class="muted">この日の仕訳はありません。</p>' : ''}
-      ${TYPE_ORDER.map(type => `
-        <div class="kv">
-          <span>${TYPE_LABEL[type]}</span>
-          <span>
-            <span class="cal-delta-plus">+${fmt(summary[type].increase)}</span>
-            &nbsp;/&nbsp;
-            <span class="cal-delta-minus">-${fmt(summary[type].decrease)}</span>
-          </span>
-        </div>
-      `).join('')}
+      <h3>${title}</h3>
+      ${isRange ? `<p class="muted" style="font-size:12px; margin:-8px 0 8px;">${range.start} 〜 ${range.end}／${dayEntries.length}件</p>` : ''}
+      <div class="period-toggle" style="margin-bottom:12px;">
+        <button class="secondary ${mode === 'summary' ? 'active' : ''}" id="day-mode-summary">科目別増減</button>
+        <button class="secondary ${mode === 'entries' ? 'active' : ''}" id="day-mode-entries">${entriesTabLabel}</button>
+      </div>
+      ${bodyHtml}
       <div class="row" style="margin-top:16px;">
         <button class="secondary" id="modal-cancel">閉じる</button>
       </div>
     `;
     overlay.appendChild(modal);
     app.appendChild(overlay);
-    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.selectedDate = null; render(); };
+    document.getElementById('day-mode-summary').onclick = () => { state.daySummaryMode = 'summary'; render(); };
+    document.getElementById('day-mode-entries').onclick = () => { state.daySummaryMode = 'entries'; render(); };
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.selectedDate = null; state.selectedRange = null; render(); };
+    modal.querySelectorAll('[data-day-edit]').forEach(btn => {
+      btn.onclick = () => {
+        state.editingEntryId = btn.dataset.dayEdit;
+        state.entryDraft = null;
+        state.error = '';
+        state.returnModal = 'day-summary';
+        state.modal = 'edit-entry';
+        render();
+      };
+    });
+    modal.querySelectorAll('[data-day-delete]').forEach(btn => {
+      btn.onclick = () => {
+        state.confirmEntryId = btn.dataset.dayDelete;
+        state.returnModal = 'day-summary';
+        state.modal = 'confirm-entry-delete';
+        render();
+      };
+    });
   } else if (state.modal === 'edit-account') {
     const book = currentBook();
     const acc = book.accounts.find(a => a.id === state.editingAccountId);
@@ -642,6 +776,135 @@ function renderModal(app) {
     overlay.appendChild(modal);
     app.appendChild(overlay);
     document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.viewingMemo = null; render(); };
+  } else if (state.modal === 'confirm-entry-delete') {
+    const book = currentBook();
+    const entry = book.entries.find(e => e.id === state.confirmEntryId);
+    if (!entry) { state.confirmEntryId = null; closeEntryModal(); return; }
+    modal.innerHTML = `
+      <h3>仕訳を削除</h3>
+      <p class="muted" style="font-size:13px;">この仕訳をゴミ箱に移動する。30日以内なら復元できる。</p>
+      <div style="font-size:13px; background:#f7f6f2; border-radius:8px; padding:10px 12px; margin-bottom:16px;">
+        <div>${entry.date}</div>
+        <div>借方: ${entry.debit} / 貸方: ${entry.credit}</div>
+        <div>金額: ${fmt(entry.amount)}円</div>
+        <div style="color:#5f5e5a;">摘要: ${entry.memo || '(なし)'}</div>
+      </div>
+      <div class="row">
+        <button class="primary" id="modal-confirm" style="background:#a32d2d;">ゴミ箱に移動</button>
+        <button class="secondary" id="modal-cancel">キャンセル</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-confirm').onclick = async () => {
+      const idx = book.entries.findIndex(e => e.id === state.confirmEntryId);
+      if (idx !== -1) {
+        const [removed] = book.entries.splice(idx, 1);
+        if (!book.trash) book.trash = [];
+        removed.deletedAt = new Date().toISOString();
+        book.trash.push(removed);
+        await saveUserData();
+      }
+      state.confirmEntryId = null;
+      closeEntryModal();
+      render();
+    };
+    document.getElementById('modal-cancel').onclick = () => { state.confirmEntryId = null; closeEntryModal(); render(); };
+  } else if (state.modal === 'confirm-purge') {
+    const book = currentBook();
+    const entry = (book.trash || []).find(e => e.id === state.confirmPurgeId);
+    if (!entry) { state.modal = null; state.confirmPurgeId = null; return; }
+    modal.innerHTML = `
+      <h3>完全に削除</h3>
+      <p style="font-size:13px; color:#a32d2d;">この仕訳を完全に削除する。元に戻せない。</p>
+      <div style="font-size:13px; background:#f7f6f2; border-radius:8px; padding:10px 12px; margin-bottom:16px;">
+        <div>${entry.date}</div>
+        <div>借方: ${entry.debit} / 貸方: ${entry.credit}</div>
+        <div>金額: ${fmt(entry.amount)}円</div>
+        <div style="color:#5f5e5a;">摘要: ${entry.memo || '(なし)'}</div>
+      </div>
+      <div class="row">
+        <button class="primary" id="modal-confirm" style="background:#a32d2d;">完全に削除</button>
+        <button class="secondary" id="modal-cancel">キャンセル</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-confirm').onclick = async () => {
+      book.trash = book.trash.filter(e => e.id !== state.confirmPurgeId);
+      await saveUserData();
+      state.modal = null;
+      state.confirmPurgeId = null;
+      render();
+    };
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.confirmPurgeId = null; render(); };
+  } else if (state.modal === 'edit-entry') {
+    const book = currentBook();
+    const entry = book.entries.find(e => e.id === state.editingEntryId);
+    if (!entry) { state.editingEntryId = null; closeEntryModal(); return; }
+    const draft = state.entryDraft || { date: entry.date, memo: entry.memo || '', debit: entry.debit, credit: entry.credit, amount: entry.amount };
+    modal.innerHTML = `
+      <h3>仕訳を編集</h3>
+      ${state.error ? `<div class="error">${state.error}</div>` : ''}
+      <div class="row"><div class="field">
+        <label>日付</label>
+        <input type="date" id="edit-date" value="${draft.date}">
+      </div></div>
+      <div class="row"><div class="field">
+        <label>摘要</label>
+        <input type="text" id="edit-memo" value="${(draft.memo || '').replace(/"/g, '&quot;')}">
+      </div></div>
+      <div class="row">
+        <div class="field">
+          <label>借方科目</label>
+          <select id="edit-debit">${accountOptions(draft.debit)}</select>
+        </div>
+        <div class="field">
+          <label>貸方科目</label>
+          <select id="edit-credit">${accountOptions(draft.credit)}</select>
+        </div>
+      </div>
+      <div class="row"><div class="field">
+        <label>金額（円）</label>
+        <input type="number" id="edit-amount" value="${draft.amount}">
+      </div></div>
+      <div class="row">
+        <button class="primary" id="modal-save">保存</button>
+        <button class="secondary" id="modal-cancel">キャンセル</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    app.appendChild(overlay);
+    document.getElementById('modal-save').onclick = async () => {
+      const date = document.getElementById('edit-date').value;
+      const memo = document.getElementById('edit-memo').value.trim();
+      const debit = document.getElementById('edit-debit').value;
+      const credit = document.getElementById('edit-credit').value;
+      const amount = parseFloat(document.getElementById('edit-amount').value);
+
+      state.error = '';
+      const fail = (msg) => {
+        state.entryDraft = { date, memo, debit, credit, amount: document.getElementById('edit-amount').value };
+        state.error = msg;
+        render();
+      };
+      if (!date) { fail('日付を入力してください。'); return; }
+      if (debit === credit) { fail('借方と貸方に同じ科目は使えません。'); return; }
+      if (!amount || amount <= 0) { fail('金額は正の数で入力してください。'); return; }
+
+      state.entryDraft = null;
+      entry.date = date;
+      entry.memo = memo;
+      entry.debit = debit;
+      entry.credit = credit;
+      entry.amount = amount;
+      book.entries.sort((a, b) => a.date.localeCompare(b.date));
+      await saveUserData();
+      state.editingEntryId = null;
+      closeEntryModal();
+      render();
+    };
+    document.getElementById('modal-cancel').onclick = () => { state.editingEntryId = null; state.entryDraft = null; state.error = ''; closeEntryModal(); render(); };
   }
 }
 
@@ -756,7 +1019,10 @@ function renderJournal(app) {
       <td>${e.credit}</td>
       <td class="num">${fmt(e.amount)}</td>
       <td style="color:#5f5e5a; cursor:pointer; text-decoration:underline dotted;" data-memo-id="${e.id}">${truncateMemo(e.memo)}</td>
-      <td><button class="link" data-id="${e.id}">削除</button></td>
+      <td>
+        <button class="link" style="color:#1a1a1a;" data-edit-entry-id="${e.id}">編集</button>
+        <button class="link" data-id="${e.id}">削除</button>
+      </td>
     </tr>
   `).join('');
   card.innerHTML = `
@@ -774,16 +1040,21 @@ function renderJournal(app) {
       render();
     };
   });
-  card.querySelectorAll('button.link').forEach(btn => {
-    btn.onclick = async () => {
-      const book = currentBook();
-      const idx = book.entries.findIndex(e => e.id === btn.dataset.id);
-      if (idx === -1) return;
-      const [removed] = book.entries.splice(idx, 1);
-      if (!book.trash) book.trash = [];
-      removed.deletedAt = new Date().toISOString();
-      book.trash.push(removed);
-      await saveUserData();
+  card.querySelectorAll('[data-edit-entry-id]').forEach(btn => {
+    btn.onclick = () => {
+      state.editingEntryId = btn.dataset.editEntryId;
+      state.entryDraft = null;
+      state.error = '';
+      state.returnModal = null;
+      state.modal = 'edit-entry';
+      render();
+    };
+  });
+  card.querySelectorAll('button.link[data-id]').forEach(btn => {
+    btn.onclick = () => {
+      state.confirmEntryId = btn.dataset.id;
+      state.returnModal = null;
+      state.modal = 'confirm-entry-delete';
       render();
     };
   });
@@ -924,78 +1195,237 @@ function assetDeltaByDate(book) {
   return map;
 }
 
+function openDaySummary(dateStr) {
+  state.selectedDate = dateStr;
+  state.selectedRange = null;
+  state.modal = 'day-summary';
+  render();
+}
+
+// 週・月など、複数日にまたがる期間でモーダルを開く
+function openRangeSummary(start, end, label) {
+  state.selectedDate = null;
+  state.selectedRange = { start, end, label };
+  state.modal = 'day-summary';
+  render();
+}
+
+// 期間内の仕訳を返す
+function entriesInRange(book, start, end) {
+  return book.entries.filter(e => e.date >= start && e.date <= end);
+}
+
+// 期間全体の資産の増加・減少と件数
+function assetDeltaForRange(book, start, end) {
+  const assetNames = new Set(book.accounts.filter(a => a.type === 'asset').map(a => a.name));
+  const r = { increase: 0, decrease: 0, count: 0 };
+  entriesInRange(book, start, end).forEach(e => {
+    r.count += 1;
+    if (assetNames.has(e.debit)) r.increase += e.amount;
+    if (assetNames.has(e.credit)) r.decrease += e.amount;
+  });
+  return r;
+}
+
+// 現在のカレンダー表示が指す「週」「月」の範囲
+function currentWeekRange() {
+  const s = startOfWeek(state.calendarAnchor);
+  return { start: s, end: addDays(s, 6) };
+}
+function currentMonthRange() {
+  const d = strToDate(state.calendarAnchor);
+  const start = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-01';
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return { start, end: d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(last) };
+}
+
+// 期間合計のクリック可能なバー（週・月ビュー上部に表示）
+function rangeTotalBar(book, start, end, label) {
+  const t = assetDeltaForRange(book, start, end);
+  const bar = document.createElement('div');
+  bar.className = 'cal-total-bar';
+  bar.setAttribute('data-range-start', start);
+  bar.setAttribute('data-range-end', end);
+  bar.innerHTML = `
+    <div>
+      <div style="font-size:12px; color:#888780;">${label}の合計（資産）</div>
+      <div style="display:flex; gap:16px; margin-top:2px;">
+        <span class="cal-delta-plus" style="font-size:16px; font-weight:600;">+${fmt(t.increase)}</span>
+        <span class="cal-delta-minus" style="font-size:16px; font-weight:600;">-${fmt(t.decrease)}</span>
+        <span style="font-size:12px; color:#5f5e5a; align-self:center;">差引 ${t.increase - t.decrease >= 0 ? '+' : ''}${fmt(t.increase - t.decrease)}</span>
+      </div>
+    </div>
+    <div style="font-size:12px; color:#5f5e5a;">${t.count}件 ›</div>
+  `;
+  bar.onclick = () => openRangeSummary(start, end, label);
+  return bar;
+}
+
+function calendarRangeLabel() {
+  const anchor = state.calendarAnchor;
+  if (state.calendarView === 'day') {
+    const d = strToDate(anchor);
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${DOW_LABELS[d.getDay()]}）`;
+  }
+  if (state.calendarView === 'week') {
+    const s = strToDate(startOfWeek(anchor));
+    const e = strToDate(addDays(startOfWeek(anchor), 6));
+    const sameYear = s.getFullYear() === e.getFullYear();
+    return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 〜 ${sameYear ? '' : e.getFullYear() + '年'}${e.getMonth() + 1}月${e.getDate()}日`;
+  }
+  const d = strToDate(anchor);
+  return `${d.getFullYear()}年 ${d.getMonth() + 1}月`;
+}
+
+function shiftCalendar(direction) {
+  const v = state.calendarView;
+  if (v === 'day') state.calendarAnchor = addDays(state.calendarAnchor, direction);
+  else if (v === 'week') state.calendarAnchor = addDays(state.calendarAnchor, 7 * direction);
+  else state.calendarAnchor = addMonths(state.calendarAnchor, direction);
+  render();
+}
+
+function deltaHtml(delta) {
+  if (!delta || (!delta.increase && !delta.decrease)) return '';
+  return `
+    <div class="cal-delta-plus">+${fmt(delta.increase)}</div>
+    <div class="cal-delta-minus">-${fmt(delta.decrease)}</div>
+  `;
+}
+
 function renderCalendar(app) {
   const book = currentBook();
-  const year = state.calendarYear;
-  const month = state.calendarMonth; // 0-indexed
   const deltas = assetDeltaByDate(book);
   const today = todayStr();
+  const view = state.calendarView;
 
+  // ビュー切り替え
+  const toggle = document.createElement('div');
+  toggle.className = 'period-toggle';
+  [['day', '日'], ['week', '週'], ['month', '月']].forEach(([key, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'secondary' + (view === key ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => { state.calendarView = key; render(); };
+    toggle.appendChild(btn);
+  });
+  const todayBtn = document.createElement('button');
+  todayBtn.className = 'secondary';
+  todayBtn.textContent = '今日';
+  todayBtn.style.marginLeft = 'auto';
+  todayBtn.onclick = () => { state.calendarAnchor = todayStr(); render(); };
+  toggle.appendChild(todayBtn);
+  app.appendChild(toggle);
+
+  // 前後ナビ
   const header = document.createElement('div');
   header.className = 'cal-header';
   header.innerHTML = `
     <button id="cal-prev">‹</button>
-    <h3>${year}年 ${month + 1}月</h3>
+    <h3>${calendarRangeLabel()}</h3>
     <button id="cal-next">›</button>
   `;
   app.appendChild(header);
-  document.getElementById('cal-prev').onclick = () => {
-    state.calendarMonth -= 1;
-    if (state.calendarMonth < 0) { state.calendarMonth = 11; state.calendarYear -= 1; }
-    render();
-  };
-  document.getElementById('cal-next').onclick = () => {
-    state.calendarMonth += 1;
-    if (state.calendarMonth > 11) { state.calendarMonth = 0; state.calendarYear += 1; }
-    render();
-  };
+  document.getElementById('cal-prev').onclick = () => shiftCalendar(-1);
+  document.getElementById('cal-next').onclick = () => shiftCalendar(1);
 
   const card = document.createElement('div');
   card.className = 'card';
 
-  const grid = document.createElement('div');
-  grid.className = 'cal-grid';
-  ['日', '月', '火', '水', '木', '金', '土'].forEach(d => {
-    const el = document.createElement('div');
-    el.className = 'cal-dow';
-    el.textContent = d;
-    grid.appendChild(el);
-  });
+  if (view === 'month') {
+    const anchor = strToDate(state.calendarAnchor);
+    const year = anchor.getFullYear();
+    const month = anchor.getMonth();
+    const mr = currentMonthRange();
+    card.appendChild(rangeTotalBar(book, mr.start, mr.end, `${year}年${month + 1}月`));
 
-  const firstDay = new Date(year, month, 1);
-  const startWeekday = firstDay.getDay(); // 0=日曜
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const grid = document.createElement('div');
+    grid.className = 'cal-grid';
+    DOW_LABELS.forEach(d => {
+      const el = document.createElement('div');
+      el.className = 'cal-dow';
+      el.textContent = d;
+      grid.appendChild(el);
+    });
 
-  for (let i = 0; i < startWeekday; i++) {
-    const empty = document.createElement('div');
-    empty.className = 'cal-cell empty';
-    grid.appendChild(empty);
-  }
-
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-    const cell = document.createElement('div');
-    cell.className = 'cal-cell' + (dateStr === today ? ' today' : '');
-    const delta = deltas[dateStr];
-    let deltaHtml = '';
-    if (delta && (delta.increase || delta.decrease)) {
-      deltaHtml = `
-        <div class="cal-delta-plus">+${fmt(delta.increase)}</div>
-        <div class="cal-delta-minus">-${fmt(delta.decrease)}</div>
-      `;
+    const startWeekday = new Date(year, month, 1).getDay(); // 0=日曜
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (let i = 0; i < startWeekday; i++) {
+      const empty = document.createElement('div');
+      empty.className = 'cal-cell empty';
+      grid.appendChild(empty);
     }
-    cell.innerHTML = `<div class="cal-date">${d}</div>${deltaHtml}`;
-    cell.onclick = () => { state.selectedDate = dateStr; state.modal = 'day-summary'; render(); };
-    grid.appendChild(cell);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = year + '-' + pad2(month + 1) + '-' + pad2(d);
+      const cell = document.createElement('div');
+      cell.className = 'cal-cell' + (dateStr === today ? ' today' : '');
+      cell.setAttribute('data-date', dateStr);
+      cell.innerHTML = `<div class="cal-date">${d}</div>${deltaHtml(deltas[dateStr])}`;
+      cell.onclick = () => openDaySummary(dateStr);
+      grid.appendChild(cell);
+    }
+    card.appendChild(grid);
+  } else if (view === 'week') {
+    const weekStart = startOfWeek(state.calendarAnchor);
+    const wr = currentWeekRange();
+    card.appendChild(rangeTotalBar(book, wr.start, wr.end, calendarRangeLabel()));
+    for (let i = 0; i < 7; i++) {
+      const dateStr = addDays(weekStart, i);
+      const d = strToDate(dateStr);
+      const count = book.entries.filter(e => e.date === dateStr).length;
+      const row = document.createElement('div');
+      row.className = 'cal-week-row' + (dateStr === today ? ' today' : '');
+      row.setAttribute('data-date', dateStr);
+      row.innerHTML = `
+        <div class="cal-week-date">
+          <div class="cal-date">${d.getMonth() + 1}/${d.getDate()}</div>
+          <div class="cal-week-dow">${DOW_LABELS[d.getDay()]}</div>
+        </div>
+        <div class="cal-week-body">${deltaHtml(deltas[dateStr]) || '<span class="muted" style="font-size:12px;">—</span>'}</div>
+        <div class="cal-week-count">${count > 0 ? count + '件' : ''}</div>
+      `;
+      row.onclick = () => openDaySummary(dateStr);
+      card.appendChild(row);
+    }
+  } else {
+    const dateStr = state.calendarAnchor;
+    const dayEntries = book.entries.filter(e => e.date === dateStr);
+    const delta = deltas[dateStr] || { increase: 0, decrease: 0 };
+    const box = document.createElement('div');
+    box.setAttribute('data-date', dateStr);
+    box.innerHTML = `
+      <div class="cal-day-head" style="cursor:pointer;">
+        <div>
+          <div style="font-size:12px; color:#888780;">資産の増加</div>
+          <div class="cal-delta-plus" style="font-size:20px; font-weight:600;">+${fmt(delta.increase)}</div>
+        </div>
+        <div>
+          <div style="font-size:12px; color:#888780;">資産の減少</div>
+          <div class="cal-delta-minus" style="font-size:20px; font-weight:600;">-${fmt(delta.decrease)}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        ${dayEntries.length === 0 ? '<p class="muted">この日の仕訳はありません。</p>' : dayEntries.map(e => `
+          <div style="border:1px solid #e5e3da; border-radius:8px; padding:8px 10px; margin-bottom:8px; font-size:13px;">
+            <div style="display:flex; justify-content:space-between; gap:8px;">
+              <span>${e.debit} ／ ${e.credit}</span>
+              <span style="font-weight:600;">${fmt(e.amount)}円</span>
+            </div>
+            <div style="color:#5f5e5a; margin-top:2px; white-space:pre-wrap;">${e.memo || '(摘要なし)'}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    box.querySelector('.cal-day-head').onclick = () => openDaySummary(dateStr);
+    card.appendChild(box);
   }
 
-  card.appendChild(grid);
   app.appendChild(card);
 
   const note = document.createElement('p');
   note.className = 'muted';
   note.style.fontSize = '12px';
-  note.textContent = '数字は資産勘定の増加額（緑）・減少額（赤）。日付をタップするとその日の科目区分別増減を確認できる。';
+  note.textContent = '数字は資産勘定の増加額（緑）・減少額（赤）。日付をタップすると、その日の科目別増減と仕訳を確認できる。';
   app.appendChild(note);
 }
 
@@ -1381,9 +1811,9 @@ function renderTrash(app) {
   });
 
   card.querySelectorAll('[data-purge-id]').forEach(btn => {
-    btn.onclick = async () => {
-      book.trash = book.trash.filter(e => e.id !== btn.dataset.purgeId);
-      await saveUserData();
+    btn.onclick = () => {
+      state.confirmPurgeId = btn.dataset.purgeId;
+      state.modal = 'confirm-purge';
       render();
     };
   });
