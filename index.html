@@ -215,6 +215,22 @@
   .cal-week-body { flex: 1; display: flex; gap: 16px; }
   .cal-week-count { font-size: 12px; color: #5f5e5a; min-width: 32px; text-align: right; }
   .cal-day-head { display: flex; gap: 32px; }
+  /* 人物入力・検索 */
+  .ppl-box { display:flex; flex-wrap:wrap; align-items:center; gap:6px; border:1px solid #d3d1c7; border-radius:8px; padding:4px 6px; background:#fff; min-height:38px; box-sizing:border-box; }
+  .ppl-box:focus-within { border-color:#888780; }
+  .ppl-box input { flex:1 1 90px; min-width:90px; width:auto; height:28px; border:none; padding:0 4px; outline:none; font-size:14px; }
+  .ppl-chip { display:inline-flex; align-items:center; gap:2px; background:#efede5; border-radius:14px; padding:3px 4px 3px 10px; font-size:13px; }
+  .ppl-chip button { border:none; background:transparent; cursor:pointer; color:#5f5e5a; font-size:14px; line-height:1; padding:2px 6px; }
+  .ppl-add { border:1px solid #d3d1c7; background:#fff; border-radius:8px; font-size:12px; padding:0 10px; height:28px; cursor:pointer; color:#1a1a1a; }
+  .ppl-suggest { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .ppl-suggest:empty { display:none; }
+  .ppl-suggest .lbl { font-size:11px; color:#888780; align-self:center; }
+  .ppl-pill { border:1px solid #d3d1c7; background:#fff; border-radius:14px; padding:4px 10px; font-size:13px; cursor:pointer; color:#1a1a1a; }
+  .ppl-pill:hover, .ppl-pill.active { background:#f1efe8; border-color:#888780; }
+  .ppl-pill.new { border-style:dashed; }
+  .ppl-line { font-size:11px; color:#5f5e5a; margin-top:2px; }
+  .search-card .row { margin-bottom:10px; }
+  .search-card .row:last-child { margin-bottom:0; }
   /* 週リスト（週ビュー） */
   .week-list-card { padding: 10px; }
   .week-card {
@@ -370,7 +386,10 @@ let state = {
   error: '',
   periodStart: todayStr(),
   periodEnd: todayStr(),
-  form: { date: todayStr(), memo: '', debit: '', credit: '', amount: '' },
+  form: { date: todayStr(), memo: '', debit: '', credit: '', amount: '', people: [] },
+  journalQuery: '', // 仕訳帳の摘要検索
+  journalPeople: [], // 仕訳帳の人物絞り込み（AND）
+  viewingPeople: [],
   accForm: { name: '', type: 'expense' },
   modal: null,
   calendarView: 'month', // 'day' | 'week' | 'month'
@@ -681,6 +700,7 @@ function renderModal(app) {
           <span style="font-weight:600;">${fmt(e.amount)}円</span>
         </div>
         <div style="color:#5f5e5a; margin-top:2px; white-space:pre-wrap;">${e.memo || '(摘要なし)'}</div>
+        ${peopleLineHtml(e)}
         <div style="margin-top:4px;">
           <button class="link" style="color:#1a1a1a;" data-day-edit="${e.id}">編集</button>
           <button class="link" data-day-delete="${e.id}">削除</button>
@@ -806,13 +826,14 @@ function renderModal(app) {
     modal.innerHTML = `
       <h3>摘要</h3>
       <p style="font-size:14px; white-space: pre-wrap;">${state.viewingMemo || '(摘要なし)'}</p>
+      ${(state.viewingPeople && state.viewingPeople.length) ? `<h3 style="font-size:14px; margin-bottom:4px;">誰といたとき</h3><p style="font-size:14px;">${state.viewingPeople.map(escHtml).join('、')}</p>` : ''}
       <div class="row" style="margin-top:16px;">
         <button class="secondary" id="modal-cancel">閉じる</button>
       </div>
     `;
     overlay.appendChild(modal);
     app.appendChild(overlay);
-    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.viewingMemo = null; render(); };
+    document.getElementById('modal-cancel').onclick = () => { state.modal = null; state.viewingMemo = null; state.viewingPeople = []; render(); };
   } else if (state.modal === 'confirm-entry-delete') {
     const book = currentBook();
     const entry = book.entries.find(e => e.id === state.confirmEntryId);
@@ -825,6 +846,7 @@ function renderModal(app) {
         <div>借方: ${entry.debit} / 貸方: ${entry.credit}</div>
         <div>金額: ${fmt(entry.amount)}円</div>
         <div style="color:#5f5e5a;">摘要: ${entry.memo || '(なし)'}</div>
+        ${(entry.people && entry.people.length) ? `<div style="color:#5f5e5a;">同行者: ${entry.people.map(escHtml).join('、')}</div>` : ''}
       </div>
       <div class="row">
         <button class="primary" id="modal-confirm" style="background:#a32d2d;">ゴミ箱に移動</button>
@@ -859,6 +881,7 @@ function renderModal(app) {
         <div>借方: ${entry.debit} / 貸方: ${entry.credit}</div>
         <div>金額: ${fmt(entry.amount)}円</div>
         <div style="color:#5f5e5a;">摘要: ${entry.memo || '(なし)'}</div>
+        ${(entry.people && entry.people.length) ? `<div style="color:#5f5e5a;">同行者: ${entry.people.map(escHtml).join('、')}</div>` : ''}
       </div>
       <div class="row">
         <button class="primary" id="modal-confirm" style="background:#a32d2d;">完全に削除</button>
@@ -879,7 +902,7 @@ function renderModal(app) {
     const book = currentBook();
     const entry = book.entries.find(e => e.id === state.editingEntryId);
     if (!entry) { state.editingEntryId = null; closeEntryModal(); return; }
-    const draft = state.entryDraft || { date: entry.date, memo: entry.memo || '', debit: entry.debit, credit: entry.credit, amount: entry.amount };
+    const draft = state.entryDraft || { date: entry.date, memo: entry.memo || '', debit: entry.debit, credit: entry.credit, amount: entry.amount, people: (entry.people || []).slice() };
     modal.innerHTML = `
       <h3>仕訳を編集</h3>
       ${state.error ? `<div class="error">${state.error}</div>` : ''}
@@ -890,6 +913,10 @@ function renderModal(app) {
       <div class="row"><div class="field">
         <label>摘要</label>
         <input type="text" id="edit-memo" value="${(draft.memo || '').replace(/"/g, '&quot;')}">
+      </div></div>
+      <div class="row"><div class="field" style="flex:1 1 100%;">
+        <label>誰といたとき？（同行者・任意）</label>
+        <div id="edit-people"></div>
       </div></div>
       <div class="row">
         <div class="field">
@@ -912,7 +939,14 @@ function renderModal(app) {
     `;
     overlay.appendChild(modal);
     app.appendChild(overlay);
+    let editPeople = (draft.people || []).slice();
+    const editPeopleWidget = mountPeopleInput(document.getElementById('edit-people'), {
+      people: editPeople,
+      placeholder: '名前を入力',
+      onChange: (list) => { editPeople = list; },
+    });
     document.getElementById('modal-save').onclick = async () => {
+      editPeople = editPeopleWidget.commit();
       const date = document.getElementById('edit-date').value;
       const memo = document.getElementById('edit-memo').value.trim();
       const debit = document.getElementById('edit-debit').value;
@@ -921,7 +955,7 @@ function renderModal(app) {
 
       state.error = '';
       const fail = (msg) => {
-        state.entryDraft = { date, memo, debit, credit, amount: document.getElementById('edit-amount').value };
+        state.entryDraft = { date, memo, debit, credit, amount: document.getElementById('edit-amount').value, people: editPeople.slice() };
         state.error = msg;
         render();
       };
@@ -932,6 +966,7 @@ function renderModal(app) {
       state.entryDraft = null;
       entry.date = date;
       entry.memo = memo;
+      entry.people = editPeople.slice();
       entry.debit = debit;
       entry.credit = credit;
       entry.amount = amount;
@@ -943,6 +978,165 @@ function renderModal(app) {
     };
     document.getElementById('modal-cancel').onclick = () => { state.editingEntryId = null; state.entryDraft = null; state.error = ''; closeEntryModal(); render(); };
   }
+}
+
+// ===== 人物（誰といたときの費用か） =====
+function escHtml(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// 検索用の正規化: 全角半角・大文字小文字・カタカナ/ひらがなの差を吸収
+function normText(str) {
+  return String(str || '').normalize('NFKC').toLowerCase()
+    .replace(/[\u30a1-\u30f6]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+}
+// これまでに入力された人物を、使用回数の多い順に返す（全帳簿・ゴミ箱内の仕訳も含む）
+function allPeopleStats() {
+  const stats = new Map(); // key -> { name, count, last }
+  state.books.forEach(b => {
+    (b.entries || []).concat(b.trash || []).forEach(e => {
+      (e.people || []).forEach(name => {
+        const key = normText(name);
+        if (!key) return;
+        const cur = stats.get(key) || { name, count: 0, last: '' };
+        cur.count += 1;
+        if (e.date > cur.last) { cur.last = e.date; cur.name = name; }
+        stats.set(key, cur);
+      });
+    });
+  });
+  return Array.from(stats.values()).sort((a, b) => b.count - a.count || b.last.localeCompare(a.last));
+}
+function peopleLineHtml(e) {
+  return (e && e.people && e.people.length) ? `<div class="ppl-line">👥 ${e.people.map(escHtml).join('、')}</div>` : '';
+}
+
+// 人物入力ウィジェット（チップ＋候補）。再描画せず局所的に更新する。
+// opts: { people: [], onChange(list), placeholder, allowNew }
+function mountPeopleInput(host, opts) {
+  const allowNew = opts.allowNew !== false;
+  let list = (opts.people || []).slice();
+  let composing = false;
+  let active = -1;
+  let shown = [];
+  host.innerHTML = `
+    <div class="ppl-box"></div>
+    <div class="ppl-suggest"></div>
+  `;
+  const box = host.querySelector('.ppl-box');
+  const sugg = host.querySelector('.ppl-suggest');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = opts.placeholder || '名前を入力';
+  input.autocomplete = 'off';
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'ppl-add';
+  addBtn.textContent = '追加';
+
+  function has(name) { const k = normText(name); return list.some(n => normText(n) === k); }
+  function changed() { opts.onChange && opts.onChange(list.slice()); }
+  function add(name) {
+    name = String(name || '').trim();
+    if (!name) return;
+    if (!has(name)) {
+      // 既存の人物と表記ゆれ（ひらがな/カタカナ等）が一致するなら、既存の表記に揃える
+      const known = allPeopleStats().find(x => normText(x.name) === normText(name));
+      list.push(known ? known.name : name);
+      changed();
+    }
+    input.value = '';
+    active = -1;
+    drawChips();
+    drawSuggest();
+  }
+  function remove(i) { list.splice(i, 1); changed(); drawChips(); drawSuggest(); }
+
+  function drawChips() {
+    box.innerHTML = '';
+    list.forEach((name, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'ppl-chip';
+      chip.appendChild(document.createTextNode(name));
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.textContent = '×';
+      x.setAttribute('aria-label', name + 'を外す');
+      x.onclick = () => { remove(i); input.focus(); };
+      chip.appendChild(x);
+      box.appendChild(chip);
+    });
+    box.appendChild(input);
+    box.appendChild(addBtn);
+  }
+
+  function drawSuggest() {
+    const q = normText(input.value.trim());
+    const stats = allPeopleStats().filter(x => !has(x.name));
+    let items;
+    let label = '';
+    if (!q) {
+      items = stats.slice(0, 8).map(x => ({ name: x.name, isNew: false }));
+      label = items.length ? 'これまでの人物' : '';
+    } else {
+      items = stats.filter(x => normText(x.name).includes(q)).slice(0, 8).map(x => ({ name: x.name, isNew: false }));
+      const exact = stats.some(x => normText(x.name) === q) || has(input.value);
+      if (allowNew && !exact) items.push({ name: input.value.trim(), isNew: true });
+      label = '候補';
+    }
+    shown = items;
+    if (active >= items.length) active = items.length - 1;
+    sugg.innerHTML = '';
+    if (!items.length) return;
+    if (label) { const l = document.createElement('span'); l.className = 'lbl'; l.textContent = label; sugg.appendChild(l); }
+    items.forEach((it, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ppl-pill' + (it.isNew ? ' new' : '') + (i === active ? ' active' : '');
+      b.textContent = it.isNew ? `「${it.name}」を追加` : it.name;
+      // フォーカスを失わないよう pointerdown で確定
+      b.onpointerdown = (ev) => { ev.preventDefault(); };
+      b.onclick = () => { add(it.name); input.focus(); };
+      sugg.appendChild(b);
+    });
+  }
+
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => { composing = false; drawSuggest(); });
+  input.addEventListener('input', () => { active = -1; drawSuggest(); });
+  input.addEventListener('focus', drawSuggest);
+  input.addEventListener('keydown', (ev) => {
+    if (composing || ev.isComposing || ev.keyCode === 229) return; // IME変換中のEnterは無視
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      if (active >= 0 && shown[active]) add(shown[active].name);
+      else if (input.value.trim()) {
+        if (allowNew) add(input.value);
+        else if (shown.length) add(shown[0].name);
+      }
+    } else if (ev.key === 'ArrowDown') {
+      ev.preventDefault();
+      if (shown.length) { active = (active + 1) % shown.length; drawSuggest(); }
+    } else if (ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (shown.length) { active = (active - 1 + shown.length) % shown.length; drawSuggest(); }
+    } else if (ev.key === 'Backspace' && !input.value && list.length) {
+      remove(list.length - 1);
+    }
+  });
+  addBtn.onclick = () => {
+    if (input.value.trim()) { if (allowNew) add(input.value); else if (shown.length) add(shown[0].name); }
+    input.focus();
+  };
+
+  drawChips();
+  drawSuggest();
+  // 入力欄に未確定の文字があれば確定して現在のリストを返す
+  return {
+    commit() {
+      if (input.value.trim() && allowNew) add(input.value);
+      return list.slice();
+    },
+  };
 }
 
 function accountOptions(selected) {
@@ -1000,6 +1194,12 @@ function renderEntry(app) {
       </div>
     </div>
     <div class="row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>誰といたとき？（同行者・任意／複数可）</label>
+        <div id="f-people"></div>
+      </div>
+    </div>
+    <div class="row">
       <div class="field">
         <label>借方科目</label>
         <select id="f-debit"><option value="">選択してください</option>${accountOptions(state.form.debit)}</select>
@@ -1017,7 +1217,15 @@ function renderEntry(app) {
   `;
   app.appendChild(card);
 
+  if (!state.form.people) state.form.people = [];
+  const formPeople = mountPeopleInput(document.getElementById('f-people'), {
+    people: state.form.people,
+    placeholder: '名前を入力（例：太郎）',
+    onChange: (list) => { state.form.people = list; },
+  });
+
   document.getElementById('f-submit').onclick = async () => {
+    state.form.people = formPeople.commit();
     const date = document.getElementById('f-date').value;
     const memo = document.getElementById('f-memo').value.trim();
     const debit = document.getElementById('f-debit').value;
@@ -1030,23 +1238,98 @@ function renderEntry(app) {
     if (!amount || amount <= 0) { state.error = '金額は正の数で入力してください。'; render(); return; }
 
     const book = currentBook();
-    book.entries.push({ id: uid(), date, memo, debit, credit, amount });
+    const people = (state.form.people || []).slice();
+    book.entries.push({ id: uid(), date, memo, debit, credit, amount, people });
     book.entries.sort((a, b) => a.date.localeCompare(b.date));
     await saveUserData();
 
-    state.form = { date, memo: '', debit: '', credit: '', amount: '' };
+    state.form = { date, memo: '', debit: '', credit: '', amount: '', people: [] };
     render();
   };
 }
 
+function journalSearchActive() {
+  return !!(state.journalQuery.trim() || state.journalPeople.length);
+}
+
+// 摘要（スペース区切りでAND・ゆるい一致）と人物（AND）で絞り込む。検索中は期間指定を無視して全期間が対象
+function journalFilteredEntries() {
+  if (!journalSearchActive()) return filteredEntries();
+  const terms = normText(state.journalQuery).split(/\s+/).filter(Boolean);
+  const pKeys = state.journalPeople.map(normText);
+  return currentBook().entries.filter(e => {
+    const memo = normText(e.memo);
+    if (!terms.every(t => memo.includes(t))) return false;
+    if (pKeys.length) {
+      const keys = (e.people || []).map(normText);
+      if (!pKeys.every(k => keys.includes(k))) return false;
+    }
+    return true;
+  });
+}
+
 function renderJournal(app) {
   renderPeriodBar(app);
+
+  // 検索カード
+  const search = document.createElement('div');
+  search.className = 'card search-card';
+  search.innerHTML = `
+    <div class="row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>摘要で検索（スペース区切りで複数語のAND）</label>
+        <div style="display:flex; gap:8px;">
+          <input type="search" id="j-query" placeholder="例：ランチ 会議" value="${escHtml(state.journalQuery)}">
+          <button class="secondary" id="j-clear" style="white-space:nowrap;">クリア</button>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>人物で絞り込み（その人と一緒だった仕訳）</label>
+        <div id="j-people"></div>
+      </div>
+    </div>
+    <div id="j-status" class="muted" style="font-size:12px;"></div>
+  `;
+  app.appendChild(search);
+
+  const host = document.createElement('div');
+  app.appendChild(host);
+
+  function drawResults() {
+    const active = journalSearchActive();
+    document.getElementById('j-status').textContent = active
+      ? `検索中：期間指定に関係なく全期間から探しています（${journalFilteredEntries().length}件）`
+      : '';
+    drawJournalRows(host, journalFilteredEntries(), active);
+  }
+
+  document.getElementById('j-query').addEventListener('input', (ev) => {
+    state.journalQuery = ev.target.value;
+    drawResults();
+  });
+  document.getElementById('j-clear').onclick = () => {
+    state.journalQuery = '';
+    state.journalPeople = [];
+    render();
+  };
+  mountPeopleInput(document.getElementById('j-people'), {
+    people: state.journalPeople,
+    placeholder: '名前で絞り込み',
+    allowNew: false, // 既存の人物からのみ選ぶ
+    onChange: (list) => { state.journalPeople = list; drawResults(); },
+  });
+  drawResults();
+}
+
+function drawJournalRows(host, entries, searching) {
+  host.innerHTML = '';
   const card = document.createElement('div');
   card.className = 'card';
-  const entries = filteredEntries();
   if (entries.length === 0) {
-    card.innerHTML = '<p class="muted">指定期間の仕訳がありません。</p>';
-    app.appendChild(card);
+    card.innerHTML = `<p class="muted">${searching ? '条件に合う仕訳がありません。' : '指定期間の仕訳がありません。'}</p>`;
+    host.appendChild(card);
     return;
   }
   let rows = entries.map(e => `
@@ -1055,7 +1338,7 @@ function renderJournal(app) {
       <td>${e.debit}</td>
       <td>${e.credit}</td>
       <td class="num">${fmt(e.amount)}</td>
-      <td style="color:#5f5e5a; cursor:pointer; text-decoration:underline dotted;" data-memo-id="${e.id}">${truncateMemo(e.memo)}</td>
+      <td style="color:#5f5e5a; cursor:pointer; text-decoration:underline dotted;" data-memo-id="${e.id}">${escHtml(truncateMemo(e.memo))}${peopleLineHtml(e)}</td>
       <td>
         <button class="link" style="color:#1a1a1a;" data-edit-entry-id="${e.id}">編集</button>
         <button class="link" data-id="${e.id}">削除</button>
@@ -1068,11 +1351,12 @@ function renderJournal(app) {
       <tbody>${rows}</tbody>
     </table>
   `;
-  app.appendChild(card);
+  host.appendChild(card);
   card.querySelectorAll('[data-memo-id]').forEach(td => {
     td.onclick = () => {
       const e = entries.find(x => x.id === td.dataset.memoId);
       state.viewingMemo = e ? e.memo : '';
+      state.viewingPeople = e && e.people ? e.people.slice() : [];
       state.modal = 'view-memo';
       render();
     };
@@ -1517,6 +1801,7 @@ function renderCalendar(app) {
               <span style="font-weight:600;">${fmt(e.amount)}円</span>
             </div>
             <div style="color:#5f5e5a; margin-top:2px; white-space:pre-wrap;">${e.memo || '(摘要なし)'}</div>
+            ${peopleLineHtml(e)}
           </div>
         `).join('')}
       </div>
@@ -1737,7 +2022,7 @@ async function exportYearlyPdf(book, year, isFiscal) {
         <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.debit}</td>
         <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.credit}</td>
         <td style="padding:4px 6px; border-bottom:1px solid #ddd; text-align:right;">${fmt(e.amount)}</td>
-        <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.memo || ''}</td>
+        <td style="padding:4px 6px; border-bottom:1px solid #ddd;">${e.memo || ''}${(e.people && e.people.length) ? '（同行: ' + e.people.map(escHtml).join('、') + '）' : ''}</td>
       </tr>
     `).join('');
 
@@ -1887,7 +2172,7 @@ function renderTrash(app) {
         <td>${e.debit}</td>
         <td>${e.credit}</td>
         <td class="num">${fmt(e.amount)}</td>
-        <td style="color:#5f5e5a;">${truncateMemo(e.memo)}</td>
+        <td style="color:#5f5e5a;">${truncateMemo(e.memo)}${peopleLineHtml(e)}</td>
         <td style="color:#888780; font-size:12px;">残り${daysLeft}日</td>
         <td>
           <button class="link" style="color:#1b7a3d;" data-restore-id="${e.id}">復元</button>
