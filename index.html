@@ -499,6 +499,23 @@ function renderLogin() {
   };
 }
 
+const APP_BUILD = '2026-09-28-d';
+
+// サービスワーカーとキャッシュをすべて破棄して読み込み直す
+async function forceUpdateApp() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (e) {}
+  location.reload();
+}
+
 function renderLoading(msg) {
   const app = document.getElementById('app');
   app.innerHTML = `<div class="login-screen"><h2>複式簿記 家計簿</h2><p>${msg}</p></div>`;
@@ -575,6 +592,14 @@ function render() {
   else if (state.tab === 'periodsummary') renderPeriodSummary(app);
   else if (state.tab === 'accounts') renderAccounts(app);
   else if (state.tab === 'trash') renderTrash(app);
+
+  // 版表示と強制更新（更新が反映されているか確認するため）
+  const ver = document.createElement('p');
+  ver.className = 'muted';
+  ver.style.cssText = 'font-size:11px; text-align:center; margin:8px 0 24px;';
+  ver.innerHTML = `版: ${APP_BUILD} ／ <button class="link" style="color:#5f5e5a; text-decoration:underline; font-size:11px;" id="force-update">最新版に強制更新</button>`;
+  app.appendChild(ver);
+  document.getElementById('force-update').onclick = forceUpdateApp;
 
   if (state.modal) renderModal(app);
 
@@ -1254,10 +1279,11 @@ function journalSearchActive() {
 
 // 摘要（スペース区切りでAND・ゆるい一致）と人物（AND）で絞り込む。検索中は期間指定を無視して全期間が対象
 function journalFilteredEntries() {
-  if (!journalSearchActive()) return filteredEntries();
+  const base = filteredEntries(); // 期間指定（開始日・終了日）は検索時も適用する
+  if (!journalSearchActive()) return base;
   const terms = normText(state.journalQuery).split(/\s+/).filter(Boolean);
   const pKeys = state.journalPeople.map(normText);
-  return currentBook().entries.filter(e => {
+  return base.filter(e => {
     const memo = normText(e.memo);
     if (!terms.every(t => memo.includes(t))) return false;
     if (pKeys.length) {
@@ -1266,6 +1292,39 @@ function journalFilteredEntries() {
     }
     return true;
   });
+}
+
+// 検索結果（仕訳帳）を、資産・負債・純資産・収益・費用の5科目区分ごとにまとめる
+function renderJournalSummary(host, entries) {
+  const book = currentBook();
+  const balances = computeBalances(entries, book);
+  const card = document.createElement('div');
+  card.className = 'card';
+  let html = '<h3 style="margin-bottom:10px;">5科目区分別の集計</h3>';
+  let any = false;
+  TYPE_ORDER.forEach(type => {
+    const rows = Object.entries(balances).filter(([, b]) => b.type === type && (b.debit || b.credit));
+    if (rows.length === 0) return;
+    any = true;
+    const subtotal = rows.reduce((sum, [, b]) => sum + b.balance, 0);
+    html += `
+      <h4 style="margin:14px 0 6px;">${TYPE_LABEL[type]}<span class="muted" style="font-weight:400; font-size:12px;">（小計 ${fmt(subtotal)}）</span></h4>
+      <table>
+        <thead><tr><th>科目</th><th class="num">借方合計</th><th class="num">貸方合計</th><th class="num">差引</th></tr></thead>
+        <tbody>${rows.map(([name, b]) => `
+          <tr>
+            <td>${name}</td>
+            <td class="num">${fmt(b.debit)}</td>
+            <td class="num">${fmt(b.credit)}</td>
+            <td class="num" style="font-weight:600;">${fmt(b.balance)}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  });
+  if (!any) { html += '<p class="muted">対象の仕訳がありません。</p>'; }
+  card.innerHTML = html;
+  host.appendChild(card);
 }
 
 function renderJournal(app) {
@@ -1299,10 +1358,13 @@ function renderJournal(app) {
 
   function drawResults() {
     const active = journalSearchActive();
+    const result = journalFilteredEntries();
     document.getElementById('j-status').textContent = active
-      ? `検索中：期間指定に関係なく全期間から探しています（${journalFilteredEntries().length}件）`
+      ? `検索中：指定期間内から探しています（${result.length}件）`
       : '';
-    drawJournalRows(host, journalFilteredEntries(), active);
+    host.innerHTML = '';
+    if (active) renderJournalSummary(host, result);
+    drawJournalRows(host, result, active);
   }
 
   document.getElementById('j-query').addEventListener('input', (ev) => {
@@ -1324,7 +1386,6 @@ function renderJournal(app) {
 }
 
 function drawJournalRows(host, entries, searching) {
-  host.innerHTML = '';
   const card = document.createElement('div');
   card.className = 'card';
   if (entries.length === 0) {
@@ -2299,7 +2360,17 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(function() {});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function(reg) {
+    reg.update().catch(function() {});
+  }).catch(function() {});
+  // 新しいサービスワーカーに切り替わったら、自動で読み込み直して最新版を表示する
+  var swReloaded = false;
+  var hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', function() {
+    if (!hadController || swReloaded) return;
+    swReloaded = true;
+    location.reload();
+  });
 }
 </script>
 </body>
